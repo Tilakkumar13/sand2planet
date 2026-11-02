@@ -136,7 +136,7 @@ def write_outputs(out_dir, index, query, results, photo=None):
             .replace("%%POINTS%%", json.dumps([[r["lat"], r["lon"]] for r in results]))
             .replace("%%SYNTH%%", "true" if synthetic else "false")
             .replace("%%S2%%", S2_URL).replace("%%ESRI%%", ESRI_URL).replace("%%TOPO%%", TOPO_URL)
-            .replace("%%S2ATTR%%", html.escape(S2_ATTR, quote=True)))
+            .replace("%%S2ATTR%%", json.dumps(S2_ATTR)[1:-1]))  # goes into a JS string
     path = os.path.join(out_dir, "report.html")
     with open(path, "w") as f:
         f.write(page)

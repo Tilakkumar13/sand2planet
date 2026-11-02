@@ -1,10 +1,13 @@
 """Build the static showcase site for GitHub Pages into docs/.
 
-GitHub Pages can only host static files, so the public site cannot run a search.
-It shows the landing page (with real elevation in the hero), the measured results,
-and any searches you choose to publish as examples.
+GitHub Pages only hosts static files, so the search runs in the visitor's browser:
+the depth model comes from the Hugging Face hub (transformers.js), and this script
+exports the terrain index, the learned matcher (ONNX) and a compact 8-bit copy of the
+elevation to docs/engine/ (about 45 MB). Photos never leave the visitor's device.
 
-  python build_site.py --index data/world_z6
+  python build_site.py --index data/world_z6                 # site + in-browser search
+  python build_site.py --index data/world_z6 --no-pack       # page only, keep docs/engine as it is
+  python build_site.py --index data/world_z6 --static-only   # no search, "run it yourself" instead
   python build_site.py --index data/world_z6 --examples output/20261102_160501_123 output/20261102_161210_456
 
 Then: GitHub repo > Settings > Pages > Deploy from a branch > main, /docs.
@@ -24,6 +27,8 @@ p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDes
 p.add_argument("--index", required=True)
 p.add_argument("--examples", nargs="*", default=[], help="output/<time> folders from app.py or run.py to publish")
 p.add_argument("--out", default="docs")
+p.add_argument("--no-pack", action="store_true", help="don't re-export docs/engine (index unchanged)")
+p.add_argument("--static-only", action="store_true", help="no in-browser search")
 a = p.parse_args()
 
 idx = Index(a.index)
@@ -56,9 +61,17 @@ for k, src in enumerate(a.examples, 1):
         title=f"{abs(lat):.1f}° {'N' if lat >= 0 else 'S'}, {abs(lon):.1f}° {'E' if lon >= 0 else 'W'}",
         sub=f"{res['size_km']:.0f} km across, {max(res['ncc'], 0) * 100:.0f}% shape agreement"))
 
-page = render_page(len(idx.meta), sizes, idx.matcher, hero=hero_data(idx), static=True, examples=examples)
+browser = not a.static_only
+if browser:
+    from s2e.webpack import export_pack, export_web
+    if not a.no_pack or not os.path.exists(os.path.join(a.out, "engine", "index.json")):
+        export_pack(idx, a.out)
+    export_web(a.out)
+page = render_page(len(idx.meta), sizes, idx.matcher, hero=hero_data(idx), static=True, examples=examples,
+                   engine="./engine/" if browser else None)
 with open(os.path.join(a.out, "index.html"), "w") as f:
     f.write(page)
 open(os.path.join(a.out, ".nojekyll"), "w").close()   # serve files as they are
-print(f"[site] {a.out}/index.html with {len(examples)} example(s)")
+print(f"[site] {a.out}/index.html with {len(examples)} example(s)"
+      + (", search runs in the browser" if browser else ", no search"))
 print("[site] hero:", "real elevation" if '"real"' in page else "procedural (place not in this index)")

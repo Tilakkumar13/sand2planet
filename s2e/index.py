@@ -25,6 +25,15 @@ from .terrain import PATCH, BLUR_SIGMA, prep, zscore, describe, refine
 from .tiles import px_to_lonlat, meters_per_px
 
 
+def _local(path, prefix, sub=""):
+    """Paths in index headers are absolute on the machine that built them. If the file is not
+    there (index copied to another computer or a server), look next to the index instead."""
+    if os.path.exists(path):
+        return path
+    here = os.path.join(os.path.dirname(os.path.abspath(prefix)), sub, os.path.basename(path))
+    return here if os.path.exists(here) else path
+
+
 def _row_lat(header, y):
     return px_to_lonlat(0, y + header["py0"], header["zoom"])[1]
 
@@ -104,7 +113,7 @@ class Index:
         if meta.shape[1] == 3:  # indexes built before v0.4: [x, y, f]
             meta = np.stack([meta[:, 0], meta[:, 1], PATCH * meta[:, 2], meta[:, 2]], 1).astype(np.int32)
         self.meta = meta
-        self.mosaic = np.load(self.h["mosaic"], mmap_mode="r")
+        self.mosaic = np.load(_local(self.h["mosaic"], prefix), mmap_mode="r")
         self.levels = set(self.h["levels"])
         self.emb = None
         self.encoder = None
@@ -112,7 +121,7 @@ class Index:
             try:
                 from .learned import load_encoder
                 info = json.load(open(prefix + "_emb.json"))
-                path = model or info["model"]
+                path = model or _local(info["model"], prefix, os.path.join("..", "models"))
                 self.encoder = load_encoder(path)
                 self.emb = np.load(prefix + "_emb.npy", mmap_mode="r")
                 print(f"[index] learned matcher: {os.path.basename(path)}")

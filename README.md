@@ -30,6 +30,24 @@ python app.py --index data/world_z6
 5 minutes. `app.py` opens the upload page at `http://localhost:8000`. Start it with `--lan`
 to open it from your phone on the same Wi-Fi and use the phone camera.
 
+## The public site searches in your browser
+
+[tilakkumar13.github.io/sand2earth](https://tilakkumar13.github.io/sand2earth/) runs the whole pipeline on
+the visitor's device, so photos are never uploaded and there is no server to pay for or wake up:
+
+- **Depth:** Depth Anything V2 Small through [transformers.js](https://huggingface.co/docs/transformers.js) (8-bit, about 27 MB).
+- **Matcher:** the learned encoder exported to ONNX and run with ONNX Runtime Web.
+- **Index:** 8-bit embeddings and an 8-bit-per-tile copy of the elevation mosaic (about 45 MB in `docs/engine/`).
+- **Search and results page:** a JavaScript port of `Index.search` and `report.py` (`s2e/web/`).
+
+The port was checked against the Python code on 30 simulated sculptures from held-out regions: the same top-5
+places and the same rotation in every case. Quantising the index did not change any top-1 result in a
+60-query test. Rebuild the site after changing the index or retraining:
+
+```bash
+python build_site.py --index data/world_z6        # page + docs/engine (needs torch for the ONNX export)
+```
+
 ## Going further
 
 | step | command | time on an M-series Mac |

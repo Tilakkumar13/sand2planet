@@ -289,8 +289,9 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
         <li><i></i>Turning the best ones to line them up</li>
       </ol>
       <p id="error" role="alert"></p>
+      <p id="srv" aria-live="polite"></p>
     </div>
-    <div class="tips reveal"><span>Soft, even light</span><span>Fill the frame</span><span>Matte clay beats wet sand</span></div>
+    <div class="tips reveal"><span>Soft, even light</span><span>Fill the frame</span><span>Matte clay beats wet sand</span></div>%%RUNLOCAL%%
   </div>
 </section>
 
@@ -510,15 +511,60 @@ window.__terrainReady = true;
 (() => {
   const $ = id => document.getElementById(id);
   if (!$("drop")) return;                                  // static showcase: no upload box
-  const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress");
-  let file = null, timers = [];
+  const ENGINE = %%ENGINE%%;                               // "" = the local app does the search; else the in-browser engine folder
+  const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress"), srv = $("srv");
+  let file = null, timers = [], eng = null, rep = null, warming = null;
   function showError(msg) { err.textContent = msg; err.style.display = msg ? "block" : "none"; }
+
+  // In-browser search: fetch the engine, the terrain index and the depth model once (cached afterwards).
+  function warm() {
+    if (!ENGINE) return Promise.resolve();
+    if (warming) return warming;
+    srv.textContent = "Getting the search ready…";
+    warming = (async () => {
+      const [E, R] = await Promise.all([import(ENGINE + "engine.js"), import(ENGINE + "report.js")]);
+      rep = R; eng = new E.Engine(ENGINE);
+      let got = 0; const depthFiles = new Map();
+      const show = () => {
+        const total = (eng.info ? eng.info.bytes : 45e6) + Math.max([...depthFiles.values()].reduce((a, b) => a + b, 0), 27e6);
+        srv.textContent = `Downloading the search data, only the first time: ${Math.min(99, Math.round(got / total * 100))}%`;
+      };
+      await Promise.all([
+        eng.load((kind, n) => { got += n; show(); }),
+        eng.loadDepth((kind, n, total, name) => { got += n; depthFiles.set(name, total); show(); }),
+      ]);
+      srv.textContent = "Ready. The search runs on this device; your photo is never uploaded.";
+    })();
+    warming.catch(e => { warming = null; srv.textContent = ""; showError("The search couldn't load (" + e.message + "). Check your connection and try again."); });
+    return warming;
+  }
+  async function browserSearch() {
+    let bmp;
+    try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch (e) { throw new Error("This browser can't read that photo. Try a JPG or PNG (iPhone: Settings › Camera › Formats › Most Compatible)."); }
+    const s = Math.min(bmp.width, bmp.height), side = Math.min(s, 1024);
+    const sq = document.createElement("canvas"); sq.width = sq.height = side;
+    sq.getContext("2d").drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, side, side);
+    await warm();
+    stage(0);
+    const dc = document.createElement("canvas"); dc.width = dc.height = 518;
+    const g = dc.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(sq, 0, 0, 518, 518);
+    const h = await eng.heightFromCanvas(dc, $("invert").checked);
+    stage(1);
+    const { query, results } = await eng.search(h, { allowFlip: $("flip").checked, onStage: stage });
+    const parts = await (await fetch(ENGINE + "report.json")).json();
+    const html = rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
+    stage(3);
+    location.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  }
+
   function setFile(f) {
     if (!f) return;
     if (!f.type.startsWith("image/") && !/\.hei[cf]$/i.test(f.name)) return showError("That file isn't an image. Choose a JPG, PNG or HEIC photo.");
     file = f; showError("");
     $("pimg").src = URL.createObjectURL(f); $("pname").textContent = f.name;
     $("empty").style.display = "none"; $("preview").style.display = "block"; go.disabled = false;
+    warm();
   }
   $("pick").onchange = e => setFile(e.target.files[0]);
   $("snap").onchange = e => setFile(e.target.files[0]);
@@ -531,10 +577,16 @@ window.__terrainReady = true;
   function stage(k) { [...prog.children].forEach((li, i) => { li.className = i < k ? "done" : i === k ? "on" : ""; }); }
   go.onclick = async () => {
     if (!file) return;
-    go.disabled = true; go.textContent = "Searching"; showError(""); prog.style.display = "block"; stage(0);
-    timers = [setTimeout(() => stage(1), 1800), setTimeout(() => stage(2), 3200)];
-    const q = new URLSearchParams({ invert: +$("invert").checked, flip: +$("flip").checked });
+    go.disabled = true; go.textContent = "Searching"; showError(""); prog.style.display = "block";
     try {
+      if (ENGINE) {
+        if (!warming || srv.textContent.startsWith("Downloading")) stage(-1);
+        await browserSearch();
+        return;
+      }
+      stage(0);
+      timers = [setTimeout(() => stage(1), 1800), setTimeout(() => stage(2), 3200)];
+      const q = new URLSearchParams({ invert: +$("invert").checked, flip: +$("flip").checked });
       const r = await fetch("/search?" + q, { method: "POST", body: file, headers: { "Content-Type": "application/octet-stream" } });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "The search stopped unexpectedly. Check the terminal for details.");
@@ -542,10 +594,12 @@ window.__terrainReady = true;
       location.href = j.report;
     } catch (e) {
       timers.forEach(clearTimeout); prog.style.display = "none"; go.textContent = "Find my place";
-      showError(e.message === "Failed to fetch" ? "Can't reach the app. Is app.py still running in the terminal?" : e.message);
+      const lost = !ENGINE && (e instanceof TypeError || e.message === "Failed to fetch");
+      showError(lost ? "Can't reach the app. Is app.py still running in the terminal?" : e.message);
       go.disabled = false;
     }
   };
+  addEventListener("pageshow", () => { go.textContent = "Find my place"; go.disabled = !file; prog.style.display = "none"; });
 })();
 </script>
 %%REVEAL%%
@@ -622,6 +676,16 @@ STATIC_CSS = """
 """
 
 
+LIVE_CSS = """
+#srv { margin: 14px 0 0; text-align: center; color: var(--ink-2); font-size: 14px; min-height: 1.4em; }
+.runlocal { text-align: center; color: var(--ink-2); font-size: 14px; margin: 18px 0 0; }
+"""
+
+RUN_LOCAL = ('<p class="runlocal reveal">The first search downloads about 70 MB (the depth model and a compact copy of '
+             'the planet\'s terrain); after that it is cached. Prefer Python? '
+             '<a href="https://github.com/Tilakkumar13/sand2earth#quick-start-macos-apple-silicon">Run it from the command line</a>.</p>')
+
+
 def _static_try(examples):
     cards = "".join(
         f'<a class="ex reveal" href="{_html.escape(e["href"])}"><div class="pics">'
@@ -652,7 +716,7 @@ python app.py --index data/world_z6</pre>
 
 
 def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None, hero=None,
-                static=False, examples=None):
+                static=False, examples=None, public=False, engine=None):
     text = ("A neural network trained on thousands of real landscapes picks the candidates."
             if matcher == "learned" else
             "A rotation-proof terrain fingerprint picks the candidates.")
@@ -672,12 +736,27 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
            f"The sand above was the same place, smoothed like a hand-made copy.") if hero else \
           f"Searched against {count:,} stretches of real terrain."
     page = _PAGE
-    if static:
+    browser = static and bool(engine)
+    if public:
+        page = (page.replace("<p class=\"lede\">Your photo stays on this computer.</p>",
+                             "<p class=\"lede\">Your photo is searched on a small server, deleted after 30 minutes and never published.</p>")
+                    .replace("becomes a height map, right on your Mac.", "becomes a height map in seconds.")
+                    .replace("turns it into a height map on your Mac.", "turns it into a height map."))
+    if browser:
+        page = (page.replace("<p class=\"lede\">Your photo stays on this computer.</p>",
+                             "<p class=\"lede\">Everything runs right here in your browser. Your photo never leaves your device.</p>")
+                    .replace("becomes a height map, right on your Mac.", "becomes a height map, right in your browser.")
+                    .replace("turns it into a height map on your Mac.", "turns it into a height map, right in your browser."))
+    page = page.replace("</style></head>", LIVE_CSS + "</style></head>", 1)
+    page = page.replace("%%ENGINE%%", _json.dumps(engine if browser else ""))
+    page = page.replace("%%RUNLOCAL%%", RUN_LOCAL if browser else "")
+    if static and not browser:
         a = page.index('<section class="try light" id="try">')
         b = page.index("</section>", a) + len("</section>")
         page = page[:a] + _static_try(examples) + page[b:]
         page = page.replace("</style></head>", STATIC_CSS + "</style></head>", 1)
         page = page.replace("<p class=\"lede\">Your photo stays on this computer.</p>", "")
+        page = page.replace("becomes a height map, right on your Mac.", "becomes a height map.")
         page = page.replace('<a class="pill small" href="#try">Try it</a>', '<a class="pill small" href="#try">Try it</a>')
     return (page.replace("%%HERODATA%%", _json.dumps(hero) if hero else "null").replace("%%HEROCAP%%", _html.escape(cap))
             .replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS).replace("%%MARK%%", MARK_SVG)

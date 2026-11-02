@@ -30,8 +30,8 @@ def device_name():
 def setup_cpu_threads():
     """Use the performance cores well on Apple Silicon without starving the system."""
     import torch
-    n = os.cpu_count() or 4
-    torch.set_num_threads(max(1, n - 1))
+    n = int(os.environ.get("S2E_THREADS") or 0) or max(1, (os.cpu_count() or 4) - 1)
+    torch.set_num_threads(n)
 
 
 def add_device_arg(parser):
