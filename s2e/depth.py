@@ -16,12 +16,10 @@ def depth_anything(img_bgr, model=MODEL):
     if _pipe is None:
         import torch
         from transformers import pipeline
-        if torch.backends.mps.is_available():
-            dev = "mps"
-        elif torch.cuda.is_available():
-            dev = "cuda"
-        else:
-            dev = "cpu"
+        from .device import device_name, setup_cpu_threads
+        dev = device_name()
+        if dev == "cpu":
+            setup_cpu_threads()
         print(f"[depth] loading {model} on {dev} (first run downloads ~100 MB)")
         _pipe = pipeline("depth-estimation", model=model, device=dev)
     from PIL import Image

@@ -24,6 +24,7 @@ import webbrowser
 import cv2
 import numpy as np
 
+from s2e.device import add_device_arg, apply_device_arg
 from s2e.index import Index
 from s2e.depth import depth_anything, shading_depth, to_heightmap, square_crop
 from s2e.report import write_outputs
@@ -43,10 +44,13 @@ p.add_argument("--flip", action="store_true", help="also test mirrored matches")
 p.add_argument("-k", type=int, default=5)
 p.add_argument("--out", default="output")
 p.add_argument("--no-browser", action="store_true")
+p.add_argument("--matcher", choices=["auto", "learned", "handcrafted"], default="auto")
+add_device_arg(p)
 a = p.parse_args()
+apply_device_arg(a)
 
 print("[run] loading index ...")
-idx = Index(a.index)
+idx = Index(a.index, matcher=a.matcher)
 print(f"[run] {len(idx.desc):,} terrain patches ready")
 
 
@@ -77,7 +81,7 @@ def preview(q, res):
     qz = zscore(q)[0]
     r = res[0]
     left = render(rotate(qz, r["rotation_deg"], r["flipped"]), 320)
-    right = render(idx.patch(r["x"], r["y"], r["level"]), 320)
+    right = render(idx.patch(r["x"], r["y"], r["w"]), 320)
     pane = np.hstack([left, right])
     cv2.putText(pane, f"{r['lat']:.2f}, {r['lon']:.2f}  ~{r['size_km']:.0f} km",
                 (10, 305), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)

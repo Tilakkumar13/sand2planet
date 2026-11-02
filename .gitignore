@@ -8,3 +8,7 @@ __pycache__/
 *.pyc
 .DS_Store
 selftest_examples.png
+
+# training checkpoints from quick experiments
+models/*_history.json
+docs/.eval_*.json

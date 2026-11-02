@@ -179,8 +179,8 @@ footer p { margin: 0; max-width: 60em; }
     <div class="col">
       <h3>What it does</h3>
       <p>A depth model (Depth Anything V2) reads the photo as a height map. That shape is compared with windows
-         of real elevation data about <strong>150, 300 and 600 km</strong> across.</p>
-      <p>The comparison ignores absolute height and compass direction, because a sandbox has neither. The strongest
+         of real elevation data <strong>%%SIZES%%</strong> across, sized in kilometres so every latitude gets a fair chance.</p>
+      <p>%%MATCHER%% The comparison ignores absolute height and compass direction, because a sandbox has neither. The strongest
          candidates are then turned through every angle, which also tells you which way your sandbox would face on the map.</p>
     </div>
     <div class="col">
@@ -363,6 +363,15 @@ footer p { margin: 0; max-width: 60em; }
 """
 
 
-def render_page(count):
+def _join(km):
+    parts = [f"{k:,.0f}" for k in km]
+    return parts[0] + " km" if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1] + " km"
+
+
+def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted"):
+    text = ("A neural network trained on thousands of real landscapes picks the candidates."
+            if matcher == "learned" else
+            "A rotation-proof terrain fingerprint picks the candidates.")
     return (_PAGE.replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS)
-            .replace("%%MARK%%", MARK_SVG).replace("%%COUNT%%", f"{count:,}"))
+            .replace("%%MARK%%", MARK_SVG).replace("%%COUNT%%", f"{count:,}")
+            .replace("%%SIZES%%", _join(sizes_km)).replace("%%MATCHER%%", text))

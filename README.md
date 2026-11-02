@@ -1,137 +1,197 @@
 # Sand → Earth
 
-Sculpt a landscape out of sand or clay, point your Mac's camera at it, and find
-the place on Earth whose real terrain looks most like what you built. Results
-open as a map over Sentinel-2 imagery, with the sandbox outline and its
-orientation drawn on the real location.
+Shape a landscape out of sand or clay, take one photo of it from above, and find the place
+on Earth whose real terrain matches it. Results show the match on Sentinel-2 imagery, with
+your sandbox outline and orientation drawn on the real place, and both surfaces side by side
+in 3D.
 
 ```
-webcam ──► Depth Anything V2 ──► heightmap ──► rotation-invariant search ──► NCC re-ranking ──► report + result.json
- (CV)          (CV, MPS)          (64×64)        over a global DEM index       (finds the angle)     (Sentinel-2 map)
+photo ─► Depth Anything V2 ─► height map ─► global terrain index ─► rotation search ─► report
+         (monocular depth)      (64×64)       learned CNN or            (finds the     map + 3D
+                                              hand-crafted fingerprint   compass angle)
 ```
 
-## Setup (macOS, Apple Silicon)
+The project sits between GIS, computer vision and remote sensing. Projected AR sandboxes and
+tangible GIS tools already exist, and so does query-by-example search over DEMs (see
+[prior work](#prior-work)). What is new here is closing the loop: a shape made by hand goes in,
+and a real place anywhere on the planet comes out.
+
+## Quick start (macOS, Apple Silicon)
 
 ```bash
-cd sand2earth
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Allow camera access for your terminal app: System Settings → Privacy & Security → Camera.
-
-## 1. Build the terrain index (once)
-
-Start with one region, which takes a few minutes:
-
-```bash
-python build_index.py --zoom 7 --bbox 4 43 17 49 --name alps
-```
-
-Then index the whole planet. This downloads about 3,300 tiles, takes 20–40 minutes and uses about 1 GB of disk:
-
-```bash
 python build_index.py --zoom 6 --name world_z6
-```
-
-Elevation comes from the public [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
-(Terrarium PNGs, built from SRTM, ETOPO1 and national DEMs). It needs no account or API key.
-The index slides a window over the DEM at three scales (`--levels 1 2 4`). At zoom 6 those
-windows cover roughly 150 km, 300 km and 600 km at the equator, so your sandbox can stand in
-for a valley or for a whole mountain range.
-
-## 2. Check that the matching works
-
-```bash
-python selftest.py --index data/alps            # add --crude to simulate rough sculptures
-```
-
-This takes real places from the index and distorts each one: a random rotation, ±15 % scale,
-a non-linear height curve, tilt, blur and noise. It then checks whether the search finds the
-original place again.
-
-Results in crude-sculpture mode (`--crude`, 60 queries, MacBook with Apple Silicon):
-
-| index | windows | right place first | in top 5 | rotation error | search time |
-|---|---|---|---|---|---|
-| Alps, zoom 7 | 6,709 | 83 % | 95 % | ~2° | 58 ms |
-| World, zoom 6 | 179,472 | 77 % | 80 % | ~2° | 109 ms |
-
-### Known issue: polar bias
-
-Web Mercator stretches high latitudes, so the index currently has far more windows per km²
-near the poles than near the equator, and Greenland or Svalbard win more often than they
-should. A latitude-aware window spacing is the planned fix.
-
-## 3. Sculpt and search
-
-### Option A: upload a photo (easiest)
-
-```bash
 python app.py --index data/world_z6
 ```
 
-This opens a page at `http://localhost:8000`. Drop in a top-down photo of your sculpture and
-press **Find it on Earth**. The results report opens in the same tab.
+`build_index.py` downloads public elevation tiles (no account needed) and takes about
+5 minutes. `app.py` opens the upload page at `http://localhost:8000`. Start it with `--lan`
+to open it from your phone on the same Wi-Fi and use the phone camera.
 
-To shoot with your phone, start the app with `--lan`, then open the printed
-`http://<your-mac-ip>:8000` address on your phone (both devices on the same Wi-Fi) and tap
-**Take photo**. Without `--lan`, the app is only reachable from your Mac.
+## Going further
 
-### Option B: live webcam
+| step | command | time on an M-series Mac |
+|---|---|---|
+| finer global index | `python build_index.py --zoom 7 --levels 1 2 4 8 --name world_z7` | ~20 min, ~1.5 GB |
+| train the learned matcher | `python train.py --index data/world_z6` | ~15–30 min |
+| attach it to an index | `python embed_index.py --index data/world_z7 --model models/matcher.pt` | a few min |
+| compare both matchers | `python evaluate.py --index data/world_z7` | a few min, writes `docs/results.md` |
+
+After `embed_index.py`, `app.py`, `run.py` and `selftest.py` use the learned matcher
+automatically. Pass `--matcher handcrafted` to any of them to switch back.
+
+### Running on CPU only (e.g. MacBook Air)
+
+Everything runs on the CPU. Add `--device cpu` to any script, or set it once per Terminal
+window with `export S2E_DEVICE=cpu`. Searching is plain NumPy and always runs on the CPU;
+only the depth model and the learned matcher use PyTorch.
+
+For training, use the smaller CPU preset. It halves the network width (1.45 M parameters) and
+uses smaller batches, about 4–5× less work per step:
 
 ```bash
-python run.py --index data/world_z6
+python train.py --index data/world_z6 --preset cpu          # 3,000 steps
+python train.py --index data/world_z6 --preset cpu-quick    # 600 steps, to check it works
 ```
 
-Keyboard controls in the camera window:
+A MacBook Air has no fan and slows down after several minutes of full load. Keep it plugged
+in on a hard surface. Training saves the best checkpoint as it goes, so stopping it with
+Ctrl+C still leaves a usable `models/matcher.pt`.
 
-| key | action |
-|---|---|
-| R | drag a box around the sandbox |
-| SPACE | capture and search |
-| I | invert the heightmap, if hills come out as valleys |
-| Q | quit |
+## How it works
 
-You can also search from a photo taken straight from above, for example with your phone:
+### 1. Photo to height map
+Depth Anything V2 (small, runs on the Mac GPU) estimates relative depth from a single photo.
+Closer to the camera means higher terrain. A plane fit removes leftover camera tilt, and the
+result is resized to a 64×64 height map and z-scored, so a 10 cm clay hill and a 3,000 m
+mountain range become directly comparable.
+
+### 2. A fair index of the planet
+Elevation comes from the [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
+(SRTM, ETOPO1 and national DEMs) in Web Mercator. Mercator stretches high latitudes: at 70°,
+one kilometre covers almost three times as many pixels as at the equator. Windows measured in
+pixels therefore over-sample Greenland and Siberia, which then win searches far too often.
+
+Windows here are sized and spaced in **kilometres**: at latitude φ a window is `64·f / cos φ`
+pixels wide, and the step grows the same way. On a test planet this cut the share of random
+shapes landing above 60° from **76 %** to **23 %**. That band holds 12–17 % of the land.
+`selftest.py --bias 200` measures the same thing on real data.
+
+### 3. Shortlist: two matchers
+The search first scores every window in the index and keeps a few thousand candidates.
+
+- **Hand-crafted fingerprint.** Heights are sampled on polar rings around the centre, and
+  each ring keeps the magnitude of its angular Fourier transform, which does not change when the
+  patch rotates (the idea behind Fourier–Mellin matching). Histograms of height, slope and
+  curvature are added.
+- **Learned matcher.** A small residual CNN learns what to look at (ridges, valleys, drainage
+  patterns), then the same polar-Fourier trick is applied to its feature maps, so the embedding
+  is rotation-invariant by construction rather than by luck. It is trained contrastively
+  (InfoNCE): a distorted "sculpture" of a place has to land next to the clean window of that
+  place and away from every other place in the batch. The distortions simulate what a camera
+  and clay do: random rotation and scale, a non-linear depth response, tilt, a bowl-shaped
+  lens error, smooth depth-model warping, heavy blur for rough hand-made shapes, and noise. All
+  augmentation runs on the GPU.
+
+### 4. Re-rank and find the angle
+Each candidate is compared with the query rotated in 6° steps using normalised
+cross-correlation. The best angle tells you which compass direction your sandbox's top edge
+faces on the real map.
+
+## Evaluation
+
+`selftest.py` takes real places from the index, turns each one into a fake sculpture with
+random rotation, ±15 % scale, a bent height curve, tilt, blur and noise, and checks whether the
+search finds the original place again. `--crude` uses the heavier blur of rough hand-made
+shapes.
+
+The learned matcher never trains on one in five 10°×10° cells of the planet
+([`s2e/split.py`](s2e/split.py)). `--heldout` queries only those cells, so its numbers show
+whether the network learned terrain in general rather than memorising places.
+`evaluate.py` runs every combination and writes a table to `docs/results.md`.
+
+Results on the zoom-6 world index (88,531 latitude-aware windows), 100 crude-sculpture
+queries per row, learned matcher from a 22-minute CPU training run on a MacBook Air M3
+(`--preset cpu-quick`, 600 steps):
+
+| matcher | queries from | right place first | in top 5 | rotation error | search time |
+|---|---|---|---|---|---|
+| hand-crafted | anywhere | 77 % | 81 % | 2° | 659 ms |
+| hand-crafted | held-out regions | 76 % | 79 % | 2° | 584 ms |
+| learned | anywhere | 89 % | 92 % | 2° | 427 ms |
+| learned | held-out regions | **89 %** | **93 %** | 2° | 423 ms |
+
+The learned matcher finds the right place first 12 points more often, and it does as well
+in regions it never trained on as everywhere else, so it generalises rather than memorising
+places. With 100 queries per row the uncertainty is roughly ±6 points. The test sculptures
+are simulated; a test with photos of real clay sculptures is still to come.
+
+## The results page
+
+- The best match is named after the real region (through OpenStreetMap Nominatim), with its size, shape agreement and the direction your sandbox faces.
+- **Side by side in 3D:** your sculpture (draped with your photo) next to the real terrain (draped with Sentinel-2 imagery stitched from tiles), both turned to north at the same relief scale. You can switch to shaded relief and change the height exaggeration.
+- A map with Sentinel-2, Esri and topographic layers shows all matches, with the sandbox outline and its top edge.
+- `result.json` holds coordinates, size and rotation for TouchDesigner or other tools.
+
+## Other ways to search
 
 ```bash
-python run.py --index data/world_z6 --image sculpture.jpg
+python run.py --index data/world_z6                         # live webcam: R = region, SPACE = search
+python run.py --index data/world_z6 --image sculpture.jpg   # one photo, no browser upload
+python run.py --index data/world_z6 --heightmap dem.png     # a ready-made height map
 ```
 
-Each search writes `output/<time>/report.html` and `result.json`. The same files are also
-copied to `output/latest/`, which TouchDesigner can watch with a File In DAT.
+## Tips for good photos
 
-## Tips for good captures
-
-- Point the camera straight down, use even diffuse light, and keep hands out of the frame.
+- Shoot straight down, in soft even light, with hands out of the frame.
 - Build big, clear forms such as ridges, valleys and peaks. Fine texture is smoothed away anyway.
-- Depth from a single camera is relative, so only the shape matters, not the height. The pipeline removes camera tilt with a plane fit (`--detrend 1`).
-- Matte, light-colored modelling clay works better than shiny or wet sand.
-- `--flip` also tries mirror images, which helps if your webcam image is mirrored.
+- Matte, light-coloured modelling clay works better than shiny or wet sand.
+- If peaks come out as pits, tick **Swap hills and valleys** (`--invert`).
 
-## How the matching works
+## Project layout
 
-1. **Normalize.** Every window is resized to 64×64, smoothed, and z-scored. After that, a 10 cm hill and a 3,000 m mountain are directly comparable.
-2. **Describe without orientation.** The search must work no matter which way the sandbox faces north, so each window is described by rotation-invariant features: polar rings with FFT magnitudes along the angle (in the spirit of Fourier–Mellin), plus histograms of height (hypsometry), slope and curvature inside a circular mask.
-3. **Shortlist.** A cosine-similarity scan of all windows keeps the 1,500 best candidates.
-4. **Re-rank.** Each candidate is compared with the query rotated in 6° steps using normalized cross-correlation. This gives the final score and the angle, which tells you which compass direction the sandbox's top edge faces.
+```
+app.py            upload web app
+run.py            webcam / photo / height map from the command line
+build_index.py    download elevation, build the index
+train.py          train the learned matcher
+embed_index.py    add learned embeddings to an index
+selftest.py       accuracy, rotation error, polar bias
+evaluate.py       matcher comparison table
+s2e/
+  terrain.py      normalisation, hand-crafted descriptor, rotation search, rendering
+  index.py        latitude-aware windows, index search
+  learned.py      CNN + polar-Fourier head, GPU augmentation
+  split.py        geographic train / test split
+  device.py       CPU / Mac GPU choice (--device, S2E_DEVICE)
+  depth.py        photo → height map
+  tiles.py        AWS Terrain Tiles mosaic
+  report.py       results page with map and 3D
+  page.py style.py  upload page and shared look
+```
 
-## Prior work to cite
+## Prior work
 
-- Augmented Reality Sandbox (Kreylos, UC Davis): scans sand with a depth camera and projects onto it.
-- Tangible Landscape (NC State): sculpts sand to match a known place.
-- Content-based landscape retrieval (Jasiewicz, Netzel & Stepinski, 2013) and LSE Wisconsin (Haffner et al., 2023): query-by-example DEM search, but digital and regional.
+- Augmented Reality Sandbox (Kreylos, UC Davis): scans sand with a depth camera and projects contours onto it.
+- Tangible Landscape (NC State): sculpt sand to match a known place, with GIS analysis projected back.
+- Content-based landscape retrieval (Jasiewicz, Netzel & Stepinski, 2013) and LSE Wisconsin (Haffner et al., 2023): query-by-example DEM search, digital and regional.
+- GEAR (2026): Siamese-network retrieval of terrain analogues (Mariana Trench ↔ Tibetan Plateau).
 - terravector (GitHub): DEM patch similarity search with HNSW.
-- US patent 11,961,183: game heightmap → real-world terrain search.
+- US patent 11,961,183: game height map → real-world terrain search.
 
-None of these close the loop of physical sculpture → global search → real place.
+## Roadmap
 
-## Next steps
+- Projection back onto the sand through TouchDesigner, rotated by `rotation_deg`.
+- Live mode: search every few seconds while someone sculpts.
+- Mars and the Moon (MOLA / LOLA elevation).
+- Fine-tuning the matcher on real photos of real sculptures.
 
-- **Projection:** feed `output/latest/result.json` into TouchDesigner and project the Sentinel-2 tile back onto the sand, rotated by `rotation_deg`.
-- **Learned descriptor:** train a Siamese network on (synthetic sculpture, real DEM) pairs and swap it in for `describe()`.
-- **Continuous mode:** rerun the search every few seconds while someone sculpts, so the matched place changes live.
-- **Mars and Moon:** swap in a planetary DEM such as MOLA or LOLA.
+## Credits
 
-Imagery: Sentinel-2 cloudless 2016 by EOX IT Services GmbH (contains modified Copernicus Sentinel data), CC BY 4.0.
+Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2016 by EOX IT
+Services GmbH (contains modified Copernicus Sentinel data), CC BY 4.0. Depth: Depth Anything V2.
+Place names: OpenStreetMap contributors via Nominatim. 3D: three.js.
+
+Built by Tilak Kumar, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.

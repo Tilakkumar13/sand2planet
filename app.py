@@ -19,6 +19,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 import cv2
 import numpy as np
 
+from s2e.device import add_device_arg, apply_device_arg
 from s2e.index import Index
 from s2e.depth import depth_anything, shading_depth, to_heightmap, square_crop
 from s2e.report import write_outputs
@@ -31,15 +32,21 @@ p.add_argument("--lan", action="store_true", help="listen on the local network (
 p.add_argument("--depth", choices=["dav2", "shading"], default="dav2")
 p.add_argument("--out", default="output")
 p.add_argument("--no-browser", action="store_true")
+p.add_argument("--matcher", choices=["auto", "learned", "handcrafted"], default="auto")
+add_device_arg(p)
 a = p.parse_args()
+apply_device_arg(a)
 
 print("[app] loading index ...")
-IDX = Index(a.index)
+IDX = Index(a.index, matcher=a.matcher)
 print(f"[app] {len(IDX.desc):,} terrain patches ready")
 LOCK = threading.Lock()  # one depth model, one search at a time
 OUT = os.path.abspath(a.out)
 MAX_UPLOAD = 25 * 1024 * 1024
-PAGE = render_page(len(IDX.desc))
+from s2e.tiles import meters_per_px
+from s2e.terrain import PATCH
+_sizes = [PATCH * f * meters_per_px(0, IDX.h["zoom"]) / 1000 for f in sorted(IDX.levels)]
+PAGE = render_page(len(IDX.meta), _sizes, IDX.matcher)
 
 
 def run_search(data, invert, flip, detrend):
