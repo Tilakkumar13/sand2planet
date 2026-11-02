@@ -1,319 +1,464 @@
-"""The upload page served by app.py."""
-from .style import FONTS, BASE_CSS, MARK_SVG
+"""The landing / upload page served by app.py."""
+import html as _html
+import os
+import re
+
+from .style import FONTS, BASE_CSS, MARK_SVG, IMPORTMAP, REVEAL_JS
 
 _PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sand to Earth</title>
-<meta name="description" content="Sculpt a landscape, photograph it, and find where it already exists on Earth.">
+<meta name="description" content="Shape a landscape with your hands, take one photo, and find where it already exists on Earth.">
+<meta name="theme-color" content="#000000">
 %%FONTS%%
 <style>
 %%CSS%%
-/* ---------- hero: live contour sheet ---------- */
-.hero { position: relative; min-height: min(100svh, 980px); padding: 18px; display: flex; }
-.sheet-frame { position: relative; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-#relief { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.top { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center;
-       padding: 22px 28px; gap: 16px; }
-.top nav a { color: var(--ink-2); text-decoration: none; font-weight: 500; margin-left: 22px; }
-.top nav a:hover { color: var(--ink); }
-.hero-body { position: relative; z-index: 2; flex: 1; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-             gap: 48px; align-items: end; padding: 24px 28px 34px; }
-.lede { max-width: 640px; padding-bottom: 8px; }
-/* label halos, as printed on topographic maps */
-.lede h1, .lede p { text-shadow: 0 0 3px var(--paper), 0 0 6px var(--paper), 0 0 12px var(--paper); }
-h1 { font-weight: 800; font-size: clamp(44px, 6.4vw, 92px); line-height: .94; letter-spacing: -0.035em; margin: 0 0 26px; }
-.lede p { font-size: 19px; color: var(--ink-2); max-width: 34em; margin: 0; }
-.lede p + p { margin-top: 12px; }
-.readout { position: absolute; z-index: 2; left: 28px; top: 50%; transform: translateY(-50%);
-           font-size: 13px; color: var(--ink-3); opacity: 0; transition: opacity .2s; pointer-events: none; }
-.readout b { color: var(--contour); font-weight: 600; font-variant-numeric: tabular-nums; }
-.hero:hover .readout { opacity: 1; }
+/* ---------------- hero: sticky, scroll-scrubbed 3D ---------------- */
+.hero { position: relative; height: 320vh; background: #000; }
+.hero .stick { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+#terrain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hero .glow { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(60% 45% at 50% 62%, rgba(227, 193, 147, .16), transparent 70%); transition: opacity .6s; }
+.hero.no-gl .glow { background: radial-gradient(50% 40% at 50% 60%, rgba(227,193,147,.35), rgba(90,164,105,.18) 45%, transparent 75%); }
+.hero .copy { position: absolute; inset: 0; display: grid; place-items: start center; text-align: center;
+  padding-top: calc(var(--nav-h) + 9vh); pointer-events: none; }
+.hero .layer { grid-area: 1 / 1; will-change: opacity, transform; }
+.hero h1 { font-size: clamp(56px, 10vw, 128px); line-height: 1; font-weight: 700; letter-spacing: -0.03em; margin: 0; }
+.hero .sub { margin: 18px auto 0; max-width: 20em; font-size: clamp(21px, 2.4vw, 28px); line-height: 1.25; font-weight: 600;
+  letter-spacing: -0.01em; color: var(--on-dark); }
+.hero .beat { font-size: clamp(44px, 7.4vw, 96px); line-height: 1.02; font-weight: 700; letter-spacing: -0.03em; color: #fff; margin: 0; }
+.hero .beat small { display: block; margin-top: 16px; font-size: clamp(17px, 1.7vw, 21px); line-height: 1.4; font-weight: 500;
+  letter-spacing: -0.01em; color: var(--on-dark-2); max-width: 26em; margin-inline: auto; }
+.hero .cta { display: flex; justify-content: center; gap: 14px; margin-top: 30px; pointer-events: auto; }
+.hero .cue { position: absolute; left: 50%; bottom: 2.2vh; transform: translateX(-50%); color: var(--on-dark-2); font-size: 12px;
+  letter-spacing: 0; transition: opacity .3s; }
+.hero .cue::after { content: ""; display: block; width: 1px; height: 22px; margin: 6px auto 0; background: linear-gradient(var(--on-dark-2), transparent);
+  animation: cue 1.8s var(--ease) infinite; }
+@keyframes cue { 0% { transform: scaleY(0); transform-origin: top; } 50% { transform: scaleY(1); transform-origin: top; }
+  51% { transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+.legend { position: absolute; right: 22px; bottom: 2.2vh; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--on-dark-2); }
+.legend i { width: 64px; height: 4px; border-radius: 2px; background: #333; overflow: hidden; position: relative; }
+.legend i b { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--grad); }
 
-/* ---------- the inset: upload panel ---------- */
-.inset { background: var(--sheet); border-radius: 2px; box-shadow: 0 1px 0 var(--rule); }
-.inset-inner { padding: 24px; }
-.inset h2 { font-size: 21px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
-.inset .hint { color: var(--ink-3); font-size: 15px; margin: 0 0 18px; }
-#drop { position: relative; border: 1.5px dashed var(--rule); border-radius: var(--radius-m); min-height: 210px;
-        display: grid; place-items: center; text-align: center; padding: 18px; cursor: pointer;
-        transition: border-color .15s, background .15s; }
-#drop.over { border-color: var(--glacier); background: color-mix(in srgb, var(--glacier) 6%, transparent); }
-#drop .empty p { margin: 10px 0 14px; color: var(--ink-2); }
-#drop svg.icon { width: 46px; height: 46px; color: var(--contour); }
-#drop .pick { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-#drop .pick .btn { padding: 11px 16px; font-size: 15px; }
+/* ---------------- intro statement ---------------- */
+.statement { padding: 150px 0 140px; }
+.statement p { font-size: clamp(28px, 3.6vw, 48px); line-height: 1.14; font-weight: 700; letter-spacing: -0.01em; margin: 0;
+  color: var(--ink-3); max-width: 20em; }
+.statement p strong { color: var(--ink); font-weight: 700; }
+
+/* ---------------- how it works ---------------- */
+.how { padding: 120px 0 130px; }
+.how .head { text-align: center; margin-bottom: 64px; }
+.how .head .lede { margin: 16px auto 0; max-width: 30em; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps li { background: var(--white); border-radius: var(--r-l); padding: 40px 34px 44px; min-height: 400px; display: flex; flex-direction: column; }
+.steps .art { height: 150px; display: grid; place-items: center; margin-bottom: 26px; }
+.steps .art svg { width: 150px; height: 120px; }
+.steps .n { font-size: 15px; font-weight: 600; color: var(--ink-3); margin: 0 0 6px; }
+.steps h3 { font-size: 32px; line-height: 1.12; letter-spacing: 0.004em; font-weight: 700; margin: 0 0 12px; }
+.steps p { margin: 0; color: var(--ink-2); font-size: 17px; }
+
+/* ---------------- numbers ---------------- */
+.stats { padding: 140px 0 130px; }
+.stats .head { text-align: center; margin-bottom: 80px; }
+.stats .head .lede { margin: 18px auto 0; max-width: 28em; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 46px 30px; }
+.stat .big { display: block; font-size: clamp(56px, 6.4vw, 84px); line-height: 1; font-weight: 700; letter-spacing: -0.02em; }
+.stat p { margin: 14px 0 0; color: var(--on-dark-2); font-size: 17px; line-height: 1.4; max-width: 15em; }
+.stats .note { margin: 70px auto 0; text-align: center; color: #6e6e73; font-size: 14px; max-width: 46em; }
+
+/* ---------------- try it ---------------- */
+.try { padding: 130px 0 140px; }
+.try .head { text-align: center; margin-bottom: 50px; }
+.try .head .lede { margin: 14px auto 0; }
+.card { max-width: 720px; margin: 0 auto; background: var(--white); border-radius: var(--r-l); padding: 34px;
+  box-shadow: 0 30px 80px -40px rgba(0,0,0,.25); }
+#drop { position: relative; border-radius: var(--r-m); background: var(--light); min-height: 300px; display: grid; place-items: center;
+  text-align: center; padding: 26px; cursor: pointer; transition: background .25s var(--ease), box-shadow .25s var(--ease); }
+#drop:hover { background: #ededf0; }
+#drop.over { background: #e8f1fc; box-shadow: inset 0 0 0 2px var(--blue); }
+#drop .icon { width: 64px; height: 64px; margin: 0 auto 16px; color: var(--ink-3); }
+#drop .t { font-size: 21px; font-weight: 600; letter-spacing: 0.01em; margin: 0; }
+#drop .s { color: var(--ink-2); margin: 6px 0 20px; }
+#drop .pick { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 #preview { display: none; width: 100%; }
-#preview .ph { position: relative; aspect-ratio: 1; width: 100%; max-width: 300px; margin: 0 auto;
-               border-radius: var(--radius-s); overflow: hidden; background: var(--paper); }
-#preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
-#preview .ph::after { /* the square the search uses */
-  content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--glacier); border-radius: inherit; }
-#preview .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px;
-                 font-size: 14px; color: var(--ink-3); max-width: 300px; margin-inline: auto; }
-#preview .meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.linkish { background: none; border: none; font: inherit; color: var(--glacier); cursor: pointer; padding: 0; }
+#preview .ph { position: relative; width: min(100%, 340px); aspect-ratio: 1; margin: 0 auto; border-radius: var(--r-m); overflow: hidden;
+  box-shadow: 0 20px 50px -25px rgba(0,0,0,.45); }
+#preview img { width: 100%; height: 100%; object-fit: cover; }
+#preview .meta { display: flex; justify-content: center; gap: 14px; align-items: baseline; margin-top: 16px; color: var(--ink-2); font-size: 15px; }
+#preview .meta span { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkish { background: none; border: 0; font: inherit; color: var(--blue); cursor: pointer; padding: 0; }
+.linkish:hover { text-decoration: underline; }
 input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.opts { display: grid; gap: 10px; margin: 18px 0 20px; font-size: 15px; color: var(--ink-2); }
-.opts label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
-.opts input { accent-color: var(--glacier); width: 17px; height: 17px; margin: 3px 0 0; flex: none; }
-.opts small { display: block; color: var(--ink-3); font-size: 13px; }
+.opts { margin: 26px 0 28px; border-top: 1px solid var(--line); }
+.opt { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 16px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.opt span b { display: block; font-weight: 500; }
+.opt span small { display: block; color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 51px; height: 31px; border-radius: 31px; background: #e9e9eb;
+  position: relative; cursor: pointer; transition: background .25s var(--ease); margin: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform .25s var(--ease); }
+.switch:checked { background: #34c759; }
+.switch:checked::after { transform: translateX(20px); }
 #go { width: 100%; padding: 17px; font-size: 17px; }
-
-/* progress: the three real stages of a search */
-#progress { display: none; list-style: none; margin: 18px 0 0; padding: 0; font-size: 15px; }
-#progress li { display: flex; gap: 12px; align-items: center; padding: 5px 0; color: var(--ink-3); transition: color .2s; }
-#progress li i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+#progress { display: none; list-style: none; margin: 22px 0 0; padding: 0; }
+#progress li { display: flex; gap: 12px; align-items: center; padding: 7px 0; color: var(--ink-3); transition: color .3s; }
+#progress li i { position: relative; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #d2d2d7; flex: none; }
 #progress li.on { color: var(--ink); }
-#progress li.on i { border-color: var(--glacier); background: var(--glacier); animation: pulse 1.1s ease-in-out infinite; }
+#progress li.on i { border-color: var(--blue); border-right-color: transparent; animation: spin .8s linear infinite; }
 #progress li.done { color: var(--ink-2); }
-#progress li.done i { background: var(--forest); border-color: var(--forest); }
-@keyframes pulse { 50% { transform: scale(.6); opacity: .6; } }
-#error { display: none; margin-top: 14px; color: var(--error); font-size: 15px; }
+#progress li.done i { border-color: #34c759; background: #34c759; }
+#progress li.done i::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+@keyframes spin { to { transform: rotate(360deg); } }
+#error { display: none; margin: 16px 0 0; color: #d70015; text-align: center; }
+.tips { display: flex; justify-content: center; gap: 28px; flex-wrap: wrap; margin: 30px auto 0; color: var(--ink-2); font-size: 14px; }
+.tips span::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); margin-right: 8px; vertical-align: 2px; }
 
-/* ---------- about ---------- */
-.about { max-width: 1240px; margin: 0 auto; padding: 110px 46px 40px; }
-.about-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: end;
-              padding-bottom: 34px; border-bottom: 1px solid var(--ink); }
-.about-head h2 { font-size: clamp(34px, 4vw, 54px); line-height: 1; letter-spacing: -0.03em; margin: 0; font-weight: 800; }
-.about-head p { margin: 0; color: var(--ink-2); font-size: 19px; max-width: 36em; }
-.cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
-.col { padding: 30px 32px 10px 0; }
-.col + .col { padding-left: 32px; border-left: 1px solid var(--rule); }
-.col h3 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 14px; }
-.col p { margin: 0 0 14px; color: var(--ink-2); font-size: 16.5px; line-height: 1.6; }
-.col p strong { color: var(--ink); font-weight: 600; }
+/* ---------------- about ---------------- */
+.about { padding: 130px 0 120px; }
+.about .head { margin-bottom: 50px; }
+.about .head .lede { margin: 14px 0 0; max-width: 32em; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.tile { background: var(--light); border-radius: var(--r-l); padding: 40px 40px 36px; }
+.tile.span { grid-column: 1 / -1; }
+.tile h3 { font-size: 28px; line-height: 1.14; font-weight: 700; letter-spacing: 0.007em; margin: 0 0 14px; }
+.tile p { margin: 0 0 12px; color: var(--ink-2); }
+.tile p strong { color: var(--ink); font-weight: 600; }
+.tile ul { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 40px; }
+.tile li { break-inside: avoid; padding: 10px 0; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 15px; }
+.tile li b { display: block; color: var(--ink); font-weight: 600; font-size: 16px; }
+.byline { margin-top: 40px; color: var(--ink-2); font-size: 15px; text-align: center; }
 
-/* pipeline drawn as a profile line: photo -> depth -> search -> match */
-.profile { max-width: 1240px; margin: 0 auto; padding: 30px 46px 90px; }
-.profile svg { width: 100%; height: auto; display: block; color: var(--ink); }
-.profile .st { font: 600 15px var(--sans); fill: var(--ink); }
-.profile .sd { font: 400 13.5px var(--sans); fill: var(--ink-3); }
-
-footer { border-top: 1px solid var(--rule); }
-footer .in { max-width: 1240px; margin: 0 auto; padding: 26px 46px 40px; display: flex; justify-content: space-between;
-             gap: 24px; flex-wrap: wrap; color: var(--ink-3); font-size: 14px; }
-footer p { margin: 0; max-width: 60em; }
-
-@media (max-width: 940px) {
-  .hero { padding: 10px; min-height: auto; }
-  .hero-body { grid-template-columns: 1fr; gap: 28px; padding: 30px 18px 22px; }
-  .top { padding: 16px 18px; } .top nav a { margin-left: 16px; }
-  .readout { display: none; }
-  .about { padding: 70px 16px 24px; }
-  .about-head { grid-template-columns: 1fr; gap: 16px; }
-  .cols { grid-template-columns: 1fr; }
-  .col, .col + .col { padding: 24px 0 4px; border-left: none; }
-  .col + .col { border-top: 1px solid var(--rule); }
-  .profile { padding: 10px 16px 60px; overflow-x: auto; }
-  .profile svg { min-width: 640px; }
-  footer .in { padding: 22px 16px 32px; }
+@media (max-width: 1068px) { .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 734px) {
+  .statement { padding: 90px 0; }
+  .how, .stats, .try, .about { padding: 90px 0; }
+  .steps { grid-template-columns: 1fr; }
+  .steps li { min-height: 0; }
+  .grid4 { grid-template-columns: 1fr 1fr; gap: 36px 18px; }
+  .card { padding: 20px; border-radius: 22px; }
+  .tiles { grid-template-columns: 1fr; }
+  .tile { padding: 30px 24px; }
+  .tile ul { columns: 1; }
+  .legend { display: none; }
 }
 </style></head>
 <body>
-<section class="hero">
-  <div class="sheet-frame neatline">
-    <canvas id="relief" aria-hidden="true"></canvas>
-    <header class="top">
-      <a class="mark" href="/">%%MARK%%Sand to Earth</a>
-      <nav><a href="#about">About</a><a href="#upload">Try it</a></nav>
-    </header>
-    <div class="readout">Elevation under the cursor <b id="elev">0 m</b></div>
-    <div class="hero-body">
-      <div class="lede">
-        <h1>Shape a landscape. Find where it already exists.</h1>
-        <p>Press hills and valleys into sand or clay, take one photo from above, and this tool searches
-           <span class="num">%%COUNT%%</span> stretches of real terrain for the one that matches your shape.</p>
+<nav class="gnav" aria-label="Sand to Earth">
+  <div class="in">
+    <a class="brand" href="#top">%%MARK%%Sand to Earth</a>
+    <div class="links">
+      <a href="#how">How it works</a><a href="#numbers">Accuracy</a><a href="#about">About</a>
+      <a class="pill small" href="#try">Try it</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero dark" id="top" aria-label="Introduction">
+  <div class="stick">
+    <canvas id="terrain" aria-hidden="true"></canvas>
+    <div class="glow"></div>
+    <div class="copy">
+      <div class="layer" data-in="0" data-out=".16">
+        <h1 class="grad">Sand to Earth.</h1>
+        <p class="sub">Shape a landscape with your hands. Find where it already exists.</p>
+        <div class="cta"><a class="pill" href="#try">Try it with a photo</a><a class="pill ghost" href="#how">How it works</a></div>
       </div>
-      <div class="inset neatline" id="upload">
-        <div class="inset-inner">
-          <h2>Your sculpture</h2>
-          <p class="hint">A photo taken straight down works best.</p>
-          <div id="drop" tabindex="0" role="button" aria-label="Add a photo of your sculpture">
-            <div class="empty" id="empty">
-              <svg class="icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-                <path d="M4 38c7-1 10-14 20-16s14 10 20 9"/><path d="M11 38c4-1 6-8 13-9s9 5 13 5" opacity=".6"/>
-                <path d="M18 38c2 0 4-3 6-3s4 2 6 2" opacity=".35"/><path d="M24 4v12M18 10l6-6 6 6"/></svg>
-              <p>Drop a photo here, or</p>
-              <div class="pick">
-                <label class="btn">Choose a photo<input id="pick" type="file" accept="image/*"></label>
-                <label class="btn">Use camera<input id="snap" type="file" accept="image/*" capture="environment"></label>
-              </div>
-            </div>
-            <div id="preview">
-              <div class="ph"><img id="pimg" alt="Your photo, cropped to the square that will be searched"></div>
-              <div class="meta"><span id="pname"></span><button class="linkish" id="change" type="button">Change</button></div>
-            </div>
+      <div class="layer" data-in=".2" data-out=".42"><p class="beat">Sculpt it.<small>Press ridges, valleys and peaks into sand or clay.</small></p></div>
+      <div class="layer" data-in=".46" data-out=".66"><p class="beat">Photograph it.<small>One photo from above becomes a height map, right on your Mac.</small></p></div>
+      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Earth.<small>Searched against %%COUNT%% stretches of real terrain.</small></p></div>
+    </div>
+    <div class="cue" aria-hidden="true">Scroll</div>
+    <div class="legend" aria-hidden="true">Sand <i><b id="mixbar"></b></i> Earth</div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p class="reveal">Landforms repeat. The same uplift, erosion and rivers carve the same shapes on every continent.
+      <strong>So the ridge you press into clay on a café table almost certainly exists somewhere, at full size.</strong></p>
+  </div>
+</section>
+
+<section class="how light" id="how">
+  <div class="wide">
+    <div class="head reveal">
+      <h2 class="section-title">How it works.</h2>
+      <p class="lede">Three steps from a handful of sand to a real place on the map.</p>
+    </div>
+    <ol class="steps">
+      <li class="reveal">
+        <div class="art"><svg viewBox="0 0 150 120" fill="none" stroke-linecap="round" aria-hidden="true">
+          <ellipse cx="75" cy="92" rx="66" ry="18" fill="#efe4d3"/>
+          <path d="M14 92c14-2 18-30 38-34s24 16 36 12 18-26 32-22 14 30 18 44" fill="#e3c193"/>
+          <path d="M30 88c8-2 12-18 24-20s14 8 22 6" stroke="#c9a473" stroke-width="2"/>
+          <path d="M82 84c6-2 10-14 20-14s10 8 16 8" stroke="#c9a473" stroke-width="2"/></svg></div>
+        <p class="n">Step 1</p><h3>Sculpt.</h3>
+        <p>Press hills, ridges and valleys into sand or modelling clay. Big, clear shapes work best.</p>
+      </li>
+      <li class="reveal">
+        <div class="art"><svg viewBox="0 0 150 120" fill="none" stroke-linecap="round" aria-hidden="true">
+          <rect x="45" y="6" width="60" height="104" rx="12" fill="#1d1d1f"/>
+          <rect x="50" y="18" width="50" height="80" rx="4" fill="#3a3a3c"/>
+          <path d="M52 86c8-2 10-18 22-20s14 10 24 6v24H52z" fill="#e3c193"/>
+          <circle cx="75" cy="12" r="2.2" fill="#3a3a3c"/>
+          <path d="M60 52l15 10 15-10" stroke="#2997ff" stroke-width="2.4"/></svg></div>
+        <p class="n">Step 2</p><h3>Photograph.</h3>
+        <p>Take one photo from straight above. A depth model turns it into a height map on your Mac.</p>
+      </li>
+      <li class="reveal">
+        <div class="art"><svg viewBox="0 0 150 120" fill="none" aria-hidden="true">
+          <defs><radialGradient id="gl" cx="38%" cy="32%"><stop offset="0" stop-color="#7fc4ff"/><stop offset="1" stop-color="#0b4a8f"/></radialGradient></defs>
+          <circle cx="75" cy="60" r="50" fill="url(#gl)"/>
+          <path d="M42 40c10-6 22 2 26 10s-4 14-12 16-16 10-20 0-4-20 6-26zM84 30c10-4 26 4 30 16s-6 18-14 16-8 10-16 6-12-16-8-24 2-12 8-14z" fill="#6aa86f"/>
+          <path d="M70 84c8-2 16 2 18 8s-8 10-16 8-10-14-2-16z" fill="#c9a473"/>
+          <circle cx="98" cy="48" r="7" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="98" cy="48" r="2" fill="#fff"/></svg></div>
+        <p class="n">Step 3</p><h3>Found.</h3>
+        <p>Your shape is compared with %%COUNT%% real places, turned through every angle, and shown on satellite imagery and in 3D.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="stats dark" id="numbers">
+  <div class="wide">
+    <div class="head reveal">
+      <h2 class="section-title">Built to find the right place.</h2>
+      <p class="lede">Measured on rough, simulated sculptures, including regions of the planet the model never trained on.</p>
+    </div>
+    <div class="grid4">
+      <div class="stat reveal"><span class="big grad num">%%TOP1%%</span><p>finds the right place first.</p></div>
+      <div class="stat reveal"><span class="big grad num">%%COUNT%%</span><p>stretches of real terrain, %%SIZES%% across.</p></div>
+      <div class="stat reveal"><span class="big grad num">%%ROT%%</span><p>typical error in which way your sandbox faces.</p></div>
+      <div class="stat reveal"><span class="big grad num">%%MS%%</span><p>per search, on a laptop.</p></div>
+    </div>
+    <p class="note reveal">%%STATNOTE%%</p>
+  </div>
+</section>
+
+<section class="try light" id="try">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2 class="section-title">Try it.</h2>
+      <p class="lede">Your photo stays on this computer.</p>
+    </div>
+    <div class="card reveal">
+      <div id="drop" tabindex="0" role="button" aria-label="Add a photo of your sculpture">
+        <div id="empty">
+          <svg class="icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="6" y="14" width="52" height="40" rx="8"/><path d="M6 46l14-12 10 8 10-12 18 16"/><circle cx="44" cy="26" r="4"/></svg>
+          <p class="t">Drop a photo of your sculpture</p>
+          <p class="s">JPG, PNG or HEIC, taken from straight above.</p>
+          <div class="pick">
+            <label class="pill">Choose photo<input id="pick" type="file" accept="image/*"></label>
+            <label class="pill ghost">Use camera<input id="snap" type="file" accept="image/*" capture="environment"></label>
           </div>
-          <div class="opts">
-            <label><input type="checkbox" id="invert"><span>Swap hills and valleys<small>Use this if a result shows your peaks as pits.</small></span></label>
-            <label><input type="checkbox" id="flip"><span>Also check the mirror image<small>Helps when the camera flips the picture.</small></span></label>
-          </div>
-          <button class="btn btn-primary" id="go" disabled>Find the match</button>
-          <ol id="progress" aria-live="polite">
-            <li><i></i>Reading depth from the photo</li>
-            <li><i></i>Comparing it with <span class="num">%%COUNT%%</span> places</li>
-            <li><i></i>Turning the best ones to line them up</li>
-          </ol>
-          <p id="error" role="alert"></p>
+        </div>
+        <div id="preview">
+          <div class="ph"><img id="pimg" alt="Your photo, cropped to the square that will be searched"></div>
+          <div class="meta"><span id="pname"></span><button class="linkish" id="change" type="button">Change</button></div>
         </div>
       </div>
+      <div class="opts">
+        <label class="opt"><span><b>Swap hills and valleys</b><small>Turn this on if a result shows your peaks as pits.</small></span>
+          <input class="switch" type="checkbox" id="invert"></label>
+        <label class="opt"><span><b>Also check the mirror image</b><small>Helps when the camera flips the picture.</small></span>
+          <input class="switch" type="checkbox" id="flip"></label>
+      </div>
+      <button class="pill" id="go" disabled>Find my place</button>
+      <ol id="progress" aria-live="polite">
+        <li><i></i>Reading depth from your photo</li>
+        <li><i></i>Comparing it with %%COUNT%% places</li>
+        <li><i></i>Turning the best ones to line them up</li>
+      </ol>
+      <p id="error" role="alert"></p>
     </div>
+    <div class="tips reveal"><span>Soft, even light</span><span>Fill the frame</span><span>Matte clay beats wet sand</span></div>
   </div>
 </section>
 
 <section class="about" id="about">
-  <div class="about-head">
-    <h2>About the project</h2>
-    <p>Sand to Earth is an experiment at the meeting point of GIS, computer vision and remote sensing:
-       a physical sculpture goes in, a real place on the planet comes out.</p>
-  </div>
-  <div class="cols">
-    <div class="col">
-      <h3>Why</h3>
-      <p>Landforms repeat. The same erosion, uplift and drainage carve similar shapes on every continent,
-         so a ridge pressed into clay on a café table very likely exists somewhere at full size.</p>
-      <p>Projected sandboxes can show contour lines on sand, and tangible GIS tools can rebuild a known place
-         in sand. None of them asks the reverse question: <strong>given a shape made by hand, where on Earth is it?</strong></p>
+  <div class="wide">
+    <div class="head reveal">
+      <h2 class="section-title">About the project.</h2>
+      <p class="lede">An experiment where GIS, computer vision and remote sensing meet: a physical sculpture goes in, a real place on the planet comes out.</p>
     </div>
-    <div class="col">
-      <h3>What it does</h3>
-      <p>A depth model (Depth Anything V2) reads the photo as a height map. That shape is compared with windows
-         of real elevation data <strong>%%SIZES%%</strong> across, sized in kilometres so every latitude gets a fair chance.</p>
-      <p>%%MATCHER%% The comparison ignores absolute height and compass direction, because a sandbox has neither. The strongest
-         candidates are then turned through every angle, which also tells you which way your sandbox would face on the map.</p>
+    <div class="tiles">
+      <div class="tile reveal">
+        <h3>Why it exists.</h3>
+        <p>Projected sandboxes can draw contour lines on sand, and tangible GIS tools can rebuild a known place in sand.
+          None of them asks the reverse question: <strong>given a shape made by hand, where on Earth is it?</strong></p>
+      </div>
+      <div class="tile reveal">
+        <h3>What's inside.</h3>
+        <p>Depth Anything V2 reads the photo as a height map. %%MATCHER%% Every candidate is then turned through all
+          angles and compared exactly, which also tells you which way your sandbox would face on the map.</p>
+      </div>
+      <div class="tile reveal">
+        <h3>A fair map of the planet.</h3>
+        <p>Web Mercator stretches the poles, so pixel-sized windows make Greenland win far too often. Here every window is
+          measured in <strong>kilometres</strong>, giving every latitude the same chance.</p>
+      </div>
+      <div class="tile reveal">
+        <h3>Where the data comes from.</h3>
+        <p>Elevation from the open <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (SRTM, ETOPO1 and
+          national surveys). Imagery from <a href="https://s2maps.eu">Sentinel-2 cloudless</a> by EOX. Place names from OpenStreetMap.</p>
+      </div>
+      <div class="tile span reveal">
+        <h3>Standing on the shoulders of.</h3>
+        <ul>
+          <li><b>Augmented Reality Sandbox</b>Kreylos, UC Davis. Depth camera and projected contours.</li>
+          <li><b>Tangible Landscape</b>NC State. Sculpt sand to match a known place.</li>
+          <li><b>Content-based landscape retrieval</b>Jasiewicz, Netzel and Stepinski, 2013.</li>
+          <li><b>LSE Wisconsin</b>Haffner et al., 2023. Neural landscape search, regional.</li>
+          <li><b>GEAR</b>2026. Siamese retrieval of terrain analogues.</li>
+          <li><b>terravector</b>DEM patch similarity search.</li>
+        </ul>
+      </div>
     </div>
-    <div class="col">
-      <h3>Where</h3>
-      <p>Elevation comes from the open <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>
-         (SRTM, ETOPO1 and national surveys). Matches are shown on
-         <a href="https://s2maps.eu">Sentinel-2 cloudless</a> imagery by EOX.</p>
-      <p>Everything runs on this computer. Your photo is never uploaded anywhere.</p>
-      <p>Built by Tilak Kumar, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.</p>
-    </div>
+    <p class="byline reveal">Made by Tilak Kumar, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.</p>
   </div>
 </section>
 
-<section class="profile" aria-label="How a search works">
-  <svg viewBox="0 0 1150 215" role="img" aria-labelledby="pt">
-    <title id="pt">A photo becomes a height map, is compared with global terrain, and the best match is aligned and mapped.</title>
-    <path d="M10 150 C 120 150, 160 80, 290 98 S 450 160, 580 126 S 760 78, 870 92 S 1060 140, 1140 120"
-          fill="none" stroke="var(--contour)" stroke-width="2"/>
-    <path d="M10 170 C 140 168, 190 110, 300 122 S 460 176, 590 150 S 770 104, 880 116 S 1060 160, 1140 150"
-          fill="none" stroke="var(--contour-soft)" stroke-width="1"/>
-    <g>
-      <circle cx="40" cy="149" r="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"/>
-      <text class="st" x="40" y="40">Photo</text><text class="sd" x="40" y="60">one shot from above</text>
-      <line x1="40" y1="70" x2="40" y2="140" stroke="var(--rule)"/>
-    </g>
-    <g>
-      <circle cx="330" cy="99" r="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"/>
-      <text class="st" x="330" y="182">Height map</text><text class="sd" x="330" y="202">depth model on this computer</text>
-      <line x1="330" y1="110" x2="330" y2="164" stroke="var(--rule)"/>
-    </g>
-    <g>
-      <circle cx="620" cy="111" r="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"/>
-      <text class="st" x="620" y="40">Search</text><text class="sd" x="620" y="60">%%COUNT%% windows of terrain</text>
-      <line x1="620" y1="70" x2="620" y2="101" stroke="var(--rule)"/>
-    </g>
-    <g>
-      <circle cx="905" cy="94" r="7" fill="var(--forest)" stroke="var(--ink)" stroke-width="2"/>
-      <text class="st" x="905" y="182">Match</text><text class="sd" x="905" y="202">aligned and mapped</text>
-      <line x1="905" y1="104" x2="905" y2="164" stroke="var(--rule)"/>
-    </g>
-  </svg>
-</section>
-
-<footer><div class="in">
-  <p>Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2016 by EOX IT Services GmbH,
-     contains modified Copernicus Sentinel data, CC BY 4.0. Depth: Depth Anything V2.</p>
-  <p>Sand to Earth, 2026</p>
+<footer class="foot"><div class="wrap">
+  <p>Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2016 by EOX IT Services GmbH, contains modified
+    Copernicus Sentinel data, CC BY 4.0. Depth: Depth Anything V2. 3D: three.js.</p>
+  <div class="rule"></div>
+  <p>Sand to Earth, 2026. Open source on GitHub.</p>
 </div></footer>
 
+%%IMPORTMAP%%
 <script>
-/* ---------- contour sheet ---------- */
+/* hero text + legend follow scroll; runs even without WebGL */
 (() => {
-  const cv = document.getElementById("relief"), ctx = cv.getContext("2d");
-  const elev = document.getElementById("elev");
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const CELL = 9, LEVELS = 22, TOP_M = 3400;
-  let G = null, gw = 0, gh = 0, seed = 7;
-
-  function rand() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-  function build(w, h) {
-    gw = Math.ceil(w / CELL) + 1; gh = Math.ceil(h / CELL) + 1;
-    seed = 7;
-    const blobs = Array.from({length: 11}, () => ({
-      x: rand() * gw, y: rand() * gh, a: (rand() * 1.2 + .3) * (rand() < .25 ? -1 : 1),
-      sx: (rand() * .18 + .07) * gw, sy: (rand() * .18 + .07) * gw, r: rand() * Math.PI }));
-    G = new Float32Array(gw * gh);
-    let lo = Infinity, hi = -Infinity;
-    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
-      let v = .35 * Math.sin(i * .045 + j * .02) + .2 * Math.sin(i * .013 - j * .051);
-      for (const b of blobs) {
-        const dx = i - b.x, dy = j - b.y, c = Math.cos(b.r), s = Math.sin(b.r);
-        const u = (dx * c + dy * s) / b.sx, t = (-dx * s + dy * c) / b.sy;
-        v += b.a * Math.exp(-(u * u + t * t));
-      }
-      G[j * gw + i] = v; lo = Math.min(lo, v); hi = Math.max(hi, v);
+  const hero = document.querySelector(".hero"), layers = [...hero.querySelectorAll(".layer")];
+  const cue = hero.querySelector(".cue"), bar = document.getElementById("mixbar");
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  window.__heroP = 0;
+  function frame() {
+    const r = hero.getBoundingClientRect();
+    const p = clamp(-r.top / (r.height - innerHeight), 0, 1);
+    window.__heroP = p;
+    for (const l of layers) {
+      const a = +l.dataset.in, b = +l.dataset.out, fade = .07;
+      let o = a === 0 ? 1 - clamp((p - (b - fade)) / fade, 0, 1)
+                      : Math.min(clamp((p - a) / fade, 0, 1), 1 - clamp((p - (b - fade)) / fade, 0, 1));
+      l.style.opacity = o;
+      l.style.transform = `translateY(${(1 - o) * (p < a ? 24 : -24)}px) scale(${.97 + .03 * o})`;
+      l.style.visibility = o < .02 ? "hidden" : "visible";
     }
-    for (let k = 0; k < G.length; k++) G[k] = (G[k] - lo) / (hi - lo);
+    cue.style.opacity = clamp(1 - p / .05, 0, 1);
+    bar.style.transform = `scaleX(${clamp((p - .3) / .5, 0, 1)})`;
   }
-  function segments(level) {
-    const segs = [];
-    for (let j = 0; j < gh - 1; j++) for (let i = 0; i < gw - 1; i++) {
-      const a = G[j*gw+i], b = G[j*gw+i+1], c = G[(j+1)*gw+i+1], d = G[(j+1)*gw+i];
-      const idx = (a > level) | (b > level) << 1 | (c > level) << 2 | (d > level) << 3;
-      if (idx === 0 || idx === 15) continue;
-      const x = i * CELL, y = j * CELL, f = (p, q) => (level - p) / (q - p);
-      const T = [x + f(a, b) * CELL, y], R = [x + CELL, y + f(b, c) * CELL],
-            B = [x + f(d, c) * CELL, y + CELL], L = [x, y + f(a, d) * CELL];
-      const map = {1:[L,T],2:[T,R],3:[L,R],4:[R,B],5:[L,T,R,B],6:[T,B],7:[L,B],8:[B,L],9:[T,B],10:[T,R,B,L],
-                   11:[R,B],12:[R,L],13:[T,R],14:[T,L]}[idx];
-      segs.push([map[0], map[1]]); if (map.length === 4) segs.push([map[2], map[3]]);
-    }
-    return segs;
-  }
-  function draw(upto) {
-    const css = getComputedStyle(document.documentElement);
-    const main = css.getPropertyValue("--contour").trim(), soft = css.getPropertyValue("--contour-soft").trim();
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.lineCap = "round";
-    for (let k = 1; k <= Math.min(upto, LEVELS - 1); k++) {
-      const index = k % 5 === 0;
-      ctx.strokeStyle = index ? main : soft; ctx.lineWidth = index ? 1.5 : .8;
-      ctx.globalAlpha = index ? .75 : .7;
-      ctx.beginPath();
-      for (const [p, q] of LV[k]) { ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-  }
-  let LV = [];
-  function setup(animate) {
-    const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
-    cv.width = r.width * dpr; cv.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    build(r.width, r.height);
-    LV = Array.from({length: LEVELS}, (_, k) => k ? segments(k / LEVELS) : []);
-    if (!animate || reduce) return draw(LEVELS);
-    const t0 = performance.now(), dur = 1500;
-    (function step(t) {
-      const p = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - p, 3);
-      draw(Math.ceil(e * LEVELS)); if (p < 1) requestAnimationFrame(step);
-    })(t0);
-  }
-  setup(true);
-  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => setup(false), 150); });
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw(LEVELS));
-  cv.parentElement.addEventListener("mousemove", e => {
-    const r = cv.getBoundingClientRect();
-    const i = Math.round((e.clientX - r.left) / CELL), j = Math.round((e.clientY - r.top) / CELL);
-    if (!G || i < 0 || j < 0 || i >= gw || j >= gh) return;
-    const m = Math.round(G[j * gw + i] * TOP_M / 10) * 10;
-    elev.textContent = m.toLocaleString("en-US").replace(",", " ") + " m";
-  });
+  addEventListener("scroll", () => requestAnimationFrame(frame), { passive: true });
+  addEventListener("resize", frame); frame();
+  setTimeout(() => { if (!window.__terrainReady) hero.classList.add("no-gl"); }, 5000);
 })();
+</script>
+<script type="module">
+/* A sand sculpture that turns into real-looking mountains as you scroll. */
+import * as THREE from "three";
+const canvas = document.getElementById("terrain");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" }); }
+catch (e) { document.querySelector(".hero").classList.add("no-gl"); throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(30, 1, .1, 50);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x20242a, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(-2.5, 3, -1.5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fb8ff, .8); rim.position.set(2.5, 1.2, 2.5); scene.add(rim);
 
+// ---------- height field (deterministic) ----------
+const N = 170, R = 1;
+function hash(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function ridged(x, y, oct) { let s = 0, amp = .5, f = 1; for (let i = 0; i < oct; i++) { s += amp * (1 - Math.abs(2 * vnoise(x * f, y * f) - 1)) ** 2; amp *= .5; f *= 2.03; } return s; }
+const bumps = [[-.35, -.2, .55, .34], [.3, .25, .5, .28], [.05, -.5, .3, .2], [-.45, .45, .2, .22], [.55, -.35, .22, .2], [-.05, .1, .18, -.14]];
+const g = new THREE.PlaneGeometry(2 * R, 2 * R, N - 1, N - 1); g.rotateX(-Math.PI / 2);
+const pos = g.attributes.position, n = pos.count;
+const hs = new Float32Array(n), he = new Float32Array(n), cs = new Float32Array(n * 3), ce = new Float32Array(n * 3);
+const sand = [new THREE.Color("#b88d5f"), new THREE.Color("#d9b384"), new THREE.Color("#efd9b6")];
+const earth = [new THREE.Color("#2f5a33"), new THREE.Color("#5f7f3e"), new THREE.Color("#8a7350"), new THREE.Color("#8d8a86"), new THREE.Color("#f4f6f8")];
+function ramp(stops, t) { t = Math.min(.999, Math.max(0, t)) * (stops.length - 1); const i = Math.floor(t); return stops[i].clone().lerp(stops[i + 1], t - i); }
+let lo = 1e9, hi = -1e9;
+for (let i = 0; i < n; i++) {
+  const x = pos.getX(i), z = pos.getZ(i), r = Math.hypot(x, z);
+  let h = 0; for (const [bx, bz, s, a] of bumps) h += a * Math.exp(-((x - bx) ** 2 + (z - bz) ** 2) / (2 * s * s * .35));
+  h += .05 * Math.sin(x * 3.1 + z * 1.7);
+  const edge = Math.max(0, 1 - Math.max(0, r - .78) / .22);
+  const grain = .007 * (vnoise(x * 70, z * 70) - .5) + .012 * (vnoise(x * 18 + 3, z * 18) - .5);   // hand-pressed sand
+  hs[i] = (h + grain) * edge;
+  he[i] = (h + .26 * (ridged(x * 2.6 + 4, z * 2.6 + 9, 6) - .35) * (.35 + h)) * edge;
+  lo = Math.min(lo, he[i]); hi = Math.max(hi, he[i]);
+}
+for (let i = 0; i < n; i++) {
+  const t = (he[i] - lo) / (hi - lo);
+  const sc = ramp(sand, (hs[i] - lo) / (hi - lo) * .9 + .05), j = .94 + .1 * hash(i * .37, i * .11);
+  sc.multiplyScalar(j).toArray(cs, i * 3);
+  ramp(earth, t * t * .9 + t * .1).toArray(ce, i * 3);
+}
+g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+const am = document.createElement("canvas"); am.width = am.height = 256;
+const ac = am.getContext("2d"); ac.fillStyle = "#000"; ac.fillRect(0, 0, 256, 256); ac.fillStyle = "#fff";
+ac.beginPath(); ac.arc(128, 128, 127, 0, Math.PI * 2); ac.fill();
+const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: 0, alphaMap: new THREE.CanvasTexture(am), alphaTest: .5 });
+const land = new THREE.Mesh(g, mat); scene.add(land);
+const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R * .985, .12, 160, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: .6, metalness: .2, side: THREE.DoubleSide }));
+base.position.y = -.06; scene.add(base);
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.35, 64), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .55 }));
+shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.13; scene.add(shadow);
+const S0 = .5, S1 = .78;
+let lastMix = -1;
+function morph(m) {
+  if (Math.abs(m - lastMix) < .002) return; lastMix = m;
+  const col = g.attributes.color.array;
+  const k = m * m * (3 - 2 * m);
+  for (let i = 0; i < n; i++) {
+    pos.setY(i, (hs[i] + (he[i] - hs[i]) * k) * (S0 + (S1 - S0) * k));
+    col[i * 3] = cs[i * 3] + (ce[i * 3] - cs[i * 3]) * k;
+    col[i * 3 + 1] = cs[i * 3 + 1] + (ce[i * 3 + 1] - cs[i * 3 + 1]) * k;
+    col[i * 3 + 2] = cs[i * 3 + 2] + (ce[i * 3 + 2] - cs[i * 3 + 2]) * k;
+  }
+  pos.needsUpdate = true; g.attributes.color.needsUpdate = true; g.computeVertexNormals();
+}
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+let visible = true;
+new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(canvas);
+let sp = 0;
+const t0 = performance.now();
+renderer.setAnimationLoop(() => {
+  if (!visible) return;
+  const p = window.__heroP || 0;
+  sp += (p - sp) * .12;                                     // smooth the scroll a little
+  morph(Math.min(1, Math.max(0, (sp - .3) / .5)));
+  const t = reduce ? 0 : (performance.now() - t0) / 1000;
+  const az = -.6 + sp * 1.6 + t * .04;
+  const pol = .27 + .14 * Math.min(1, sp * 1.4);            // from high above to a low, cinematic angle
+  const narrow = cam.aspect < .8;
+  const dist = (narrow ? 9.8 : 5.8) - sp * .6;
+  cam.position.set(Math.sin(az) * Math.sin(pol * Math.PI) * dist, Math.cos(pol * Math.PI) * dist, Math.cos(az) * Math.sin(pol * Math.PI) * dist);
+  cam.lookAt(0, narrow ? .75 : .62, 0);                   // aim above the model so it sits low, under the words
+  renderer.render(scene, cam);
+});
+window.__terrainReady = true;
+</script>
+
+<script>
 /* ---------- upload ---------- */
 (() => {
   const $ = id => document.getElementById(id);
@@ -322,7 +467,7 @@ footer p { margin: 0; max-width: 60em; }
   function showError(msg) { err.textContent = msg; err.style.display = msg ? "block" : "none"; }
   function setFile(f) {
     if (!f) return;
-    if (!f.type.startsWith("image/")) return showError("That file isn't an image. Choose a JPG, PNG or HEIC photo.");
+    if (!f.type.startsWith("image/") && !/\.hei[cf]$/i.test(f.name)) return showError("That file isn't an image. Choose a JPG, PNG or HEIC photo.");
     file = f; showError("");
     $("pimg").src = URL.createObjectURL(f); $("pname").textContent = f.name;
     $("empty").style.display = "none"; $("preview").style.display = "block"; go.disabled = false;
@@ -335,43 +480,78 @@ footer p { margin: 0; max-width: 60em; }
   ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", e => setFile(e.dataTransfer.files[0]));
-
-  function stage(n) {
-    [...prog.children].forEach((li, k) => { li.className = k < n ? "done" : k === n ? "on" : ""; });
-  }
+  function stage(k) { [...prog.children].forEach((li, i) => { li.className = i < k ? "done" : i === k ? "on" : ""; }); }
   go.onclick = async () => {
     if (!file) return;
-    go.disabled = true; showError(""); prog.style.display = "block"; stage(0);
+    go.disabled = true; go.textContent = "Searching"; showError(""); prog.style.display = "block"; stage(0);
     timers = [setTimeout(() => stage(1), 1800), setTimeout(() => stage(2), 3200)];
     const q = new URLSearchParams({ invert: +$("invert").checked, flip: +$("flip").checked });
     try {
-      const r = await fetch("/search?" + q, { method: "POST", body: file,
-                                              headers: { "Content-Type": "application/octet-stream" } });
+      const r = await fetch("/search?" + q, { method: "POST", body: file, headers: { "Content-Type": "application/octet-stream" } });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "The search stopped unexpectedly. Check the terminal for details.");
       timers.forEach(clearTimeout); stage(3);
       location.href = j.report;
     } catch (e) {
-      timers.forEach(clearTimeout); prog.style.display = "none";
+      timers.forEach(clearTimeout); prog.style.display = "none"; go.textContent = "Find my place";
       showError(e.message === "Failed to fetch" ? "Can't reach the app. Is app.py still running in the terminal?" : e.message);
       go.disabled = false;
     }
   };
 })();
 </script>
+%%REVEAL%%
 </body></html>
 """
 
 
 def _join(km):
     parts = [f"{k:,.0f}" for k in km]
-    return parts[0] + " km" if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1] + " km"
+    if len(parts) == 1:
+        return parts[0] + " km"
+    return parts[0] + " to " + parts[-1] + " km"
 
 
-def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted"):
+def read_results(path="docs/results.md", matcher="handcrafted"):
+    """Pick the row matching the active matcher from evaluate.py's table (held-out row preferred)."""
+    if not os.path.exists(path):
+        return None
+    rows = {}
+    for line in open(path):
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 6 and cells[0] in ("handcrafted", "learned"):
+            rows[(cells[0], cells[1])] = cells
+    for key in ((matcher, "held-out regions"), (matcher, "anywhere")):
+        if key in rows:
+            m, where, top1, top5, rot, ms = rows[key]
+            n = re.search(r"(\d+) crude-sculpture queries", open(path).read())
+            return dict(top1=top1, rot=rot, ms=ms, where=where, n=n.group(1) if n else "100")
+    return None
+
+
+def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None):
     text = ("A neural network trained on thousands of real landscapes picks the candidates."
             if matcher == "learned" else
             "A rotation-proof terrain fingerprint picks the candidates.")
-    return (_PAGE.replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS)
-            .replace("%%MARK%%", MARK_SVG).replace("%%COUNT%%", f"{count:,}")
-            .replace("%%SIZES%%", _join(sizes_km)).replace("%%MATCHER%%", text))
+    r = results or read_results(matcher=matcher)
+    if r:
+        ms = r["ms"].replace(" ms", "")
+        ms_txt = f"{float(ms) / 1000:.1f} s" if ms.replace(".", "").isdigit() else r["ms"]
+        top1, rot = r["top1"], r["rot"]
+        note = (f"From {r['n']} simulated sculptures per test with random rotation, scale, depth distortion, blur and noise"
+                f"{', taken from regions held out of training' if r['where'] == 'held-out regions' else ''}. "
+                f"Run evaluate.py to measure it yourself. Real clay photos are the next test.")
+    else:
+        top1, rot, ms_txt = "77%", "2°", "0.6 s"
+        note = "Run evaluate.py to measure accuracy on your own index."
+    return (_PAGE.replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS).replace("%%MARK%%", MARK_SVG)
+            .replace("%%IMPORTMAP%%", IMPORTMAP).replace("%%REVEAL%%", _reveal())
+            .replace("%%COUNT%%", f"{count:,}").replace("%%SIZES%%", _join(sizes_km))
+            .replace("%%MATCHER%%", text).replace("%%TOP1%%", _html.escape(top1.replace(" ", "")))
+            .replace("%%ROT%%", _html.escape(rot)).replace("%%MS%%", _html.escape(ms_txt))
+            .replace("%%STATNOTE%%", _html.escape(note)))
+
+
+def _reveal():
+    from .style import REVEAL_JS
+    return REVEAL_JS
