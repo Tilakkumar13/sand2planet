@@ -23,7 +23,7 @@ from s2e.device import add_device_arg, apply_device_arg
 from s2e.index import Index
 from s2e.depth import depth_anything, shading_depth, to_heightmap, square_crop
 from s2e.report import write_outputs
-from s2e.page import render_page
+from s2e.page import render_page, hero_data
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 p.add_argument("--index", required=True)
@@ -46,7 +46,7 @@ MAX_UPLOAD = 25 * 1024 * 1024
 from s2e.tiles import meters_per_px
 from s2e.terrain import PATCH
 _sizes = [PATCH * f * meters_per_px(0, IDX.h["zoom"]) / 1000 for f in sorted(IDX.levels)]
-PAGE = render_page(len(IDX.meta), _sizes, IDX.matcher)
+PAGE = render_page(len(IDX.meta), _sizes, IDX.matcher, hero=hero_data(IDX))
 
 
 def run_search(data, invert, flip, detrend):

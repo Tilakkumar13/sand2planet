@@ -167,7 +167,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       </div>
       <div class="layer" data-in=".2" data-out=".42"><p class="beat">Sculpt it.<small>Press ridges, valleys and peaks into sand or clay.</small></p></div>
       <div class="layer" data-in=".46" data-out=".66"><p class="beat">Photograph it.<small>One photo from above becomes a height map, right on your Mac.</small></p></div>
-      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Earth.<small>Searched against %%COUNT%% stretches of real terrain.</small></p></div>
+      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Earth.<small>%%HEROCAP%%</small></p></div>
     </div>
     <div class="cue" aria-hidden="true">Scroll</div>
     <div class="legend" aria-hidden="true">Sand <i><b id="mixbar"></b></i> Earth</div>
@@ -177,7 +177,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 <section class="statement">
   <div class="wrap">
     <p class="reveal">Landforms repeat. The same uplift, erosion and rivers carve the same shapes on every continent.
-      <strong>So the ridge you press into clay on a café table almost certainly exists somewhere, at full size.</strong></p>
+      <strong>So the ridge you press into clay on a café table very likely exists somewhere, at full size.</strong></p>
   </div>
 </section>
 
@@ -224,11 +224,11 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 <section class="stats dark" id="numbers">
   <div class="wide">
     <div class="head reveal">
-      <h2 class="section-title">Built to find the right place.</h2>
-      <p class="lede">Measured on rough, simulated sculptures, including regions of the planet the model never trained on.</p>
+      <h2 class="section-title">Tested, not just pretty.</h2>
+      <p class="lede">We take real places, bend them into rough, rotated, blurry copies like a hand-made sculpture, and check whether the search traces each one back.</p>
     </div>
     <div class="grid4">
-      <div class="stat reveal"><span class="big grad num">%%TOP1%%</span><p>finds the right place first.</p></div>
+      <div class="stat reveal"><span class="big grad num">%%TOP1%%</span><p>of distorted copies traced back to the right place on the first try.</p></div>
       <div class="stat reveal"><span class="big grad num">%%COUNT%%</span><p>stretches of real terrain, %%SIZES%% across.</p></div>
       <div class="stat reveal"><span class="big grad num">%%ROT%%</span><p>typical error in which way your sandbox faces.</p></div>
       <div class="stat reveal"><span class="big grad num">%%MS%%</span><p>per search, on a laptop.</p></div>
@@ -328,6 +328,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
   <p>Sand to Earth, 2026. Open source on GitHub.</p>
 </div></footer>
 
+<script type="application/json" id="herodata">%%HERODATA%%</script>
 %%IMPORTMAP%%
 <script>
 /* hero text + legend follow scroll; runs even without WebGL */
@@ -374,7 +375,8 @@ const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(-2.5, 3,
 const rim = new THREE.DirectionalLight(0x8fb8ff, .8); rim.position.set(2.5, 1.2, 2.5); scene.add(rim);
 
 // ---------- height field (deterministic) ----------
-const N = 170, R = 1;
+const HERO = JSON.parse(document.getElementById("herodata").textContent);
+const N = HERO ? HERO.n : 170, R = 1;
 function hash(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, y) {
   const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
@@ -391,11 +393,30 @@ const sand = [new THREE.Color("#b88d5f"), new THREE.Color("#d9b384"), new THREE.
 const earth = [new THREE.Color("#2f5a33"), new THREE.Color("#5f7f3e"), new THREE.Color("#8a7350"), new THREE.Color("#8d8a86"), new THREE.Color("#f4f6f8")];
 function ramp(stops, t) { t = Math.min(.999, Math.max(0, t)) * (stops.length - 1); const i = Math.floor(t); return stops[i].clone().lerp(stops[i + 1], t - i); }
 let lo = 1e9, hi = -1e9;
+// Real place: the earth state is the true elevation, the sand state is the same place smoothed,
+// which is what a hand-made sculpture of it would look like. Vertex i is row-major from the north edge.
+let rLo = 1e9, rHi = -1e9;
+if (HERO) for (const v of HERO.real) { rLo = Math.min(rLo, v); rHi = Math.max(rHi, v); }
+const metresColor = [[0, "#3c6a3b"], [1200, "#6c8a45"], [2600, "#8a7350"], [4200, "#8f8b86"], [5200, "#e9edf0"], [6500, "#ffffff"]].map(([m, c]) => [m, new THREE.Color(c)]);
+function colorAtMetres(m) {
+  for (let k = 1; k < metresColor.length; k++) if (m <= metresColor[k][0]) {
+    const [m0, c0] = metresColor[k - 1], [m1, c1] = metresColor[k];
+    return c0.clone().lerp(c1, Math.max(0, (m - m0) / (m1 - m0)));
+  }
+  return metresColor[metresColor.length - 1][1].clone();
+}
 for (let i = 0; i < n; i++) {
   const x = pos.getX(i), z = pos.getZ(i), r = Math.hypot(x, z);
+  const edge = Math.max(0, 1 - Math.max(0, r - .78) / .22);
+  if (HERO) {
+    const grain = .006 * (vnoise(x * 70, z * 70) - .5) + .01 * (vnoise(x * 18 + 3, z * 18) - .5);
+    he[i] = (HERO.real[i] - rLo) / (rHi - rLo) * .46 * edge;
+    hs[i] = ((HERO.sand[i] - rLo) / (rHi - rLo) * .42 + grain) * edge;
+    lo = Math.min(lo, he[i]); hi = Math.max(hi, he[i]);
+    continue;
+  }
   let h = 0; for (const [bx, bz, s, a] of bumps) h += a * Math.exp(-((x - bx) ** 2 + (z - bz) ** 2) / (2 * s * s * .35));
   h += .05 * Math.sin(x * 3.1 + z * 1.7);
-  const edge = Math.max(0, 1 - Math.max(0, r - .78) / .22);
   const grain = .007 * (vnoise(x * 70, z * 70) - .5) + .012 * (vnoise(x * 18 + 3, z * 18) - .5);   // hand-pressed sand
   hs[i] = (h + grain) * edge;
   he[i] = (h + .26 * (ridged(x * 2.6 + 4, z * 2.6 + 9, 6) - .35) * (.35 + h)) * edge;
@@ -405,7 +426,7 @@ for (let i = 0; i < n; i++) {
   const t = (he[i] - lo) / (hi - lo);
   const sc = ramp(sand, (hs[i] - lo) / (hi - lo) * .9 + .05), j = .94 + .1 * hash(i * .37, i * .11);
   sc.multiplyScalar(j).toArray(cs, i * 3);
-  ramp(earth, t * t * .9 + t * .1).toArray(ce, i * 3);
+  (HERO ? colorAtMetres(HERO.real[i]) : ramp(earth, t * t * .9 + t * .1)).toArray(ce, i * 3);
 }
 g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
 const am = document.createElement("canvas"); am.width = am.height = 256;
@@ -462,6 +483,7 @@ window.__terrainReady = true;
 /* ---------- upload ---------- */
 (() => {
   const $ = id => document.getElementById(id);
+  if (!$("drop")) return;                                  // static showcase: no upload box
   const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress");
   let file = null, timers = [];
   function showError(msg) { err.textContent = msg; err.style.display = msg ? "block" : "none"; }
@@ -529,7 +551,82 @@ def read_results(path="docs/results.md", matcher="handcrafted"):
     return None
 
 
-def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None):
+HERO_PLACE = dict(lon=86.925, lat=27.988, km=300, name="the Himalaya around Mount Everest")
+
+
+def hero_data(index, place=HERO_PLACE, n=128):
+    """Real elevation for the landing-page hero, plus a smoothed 'sand sculpture' of the same place."""
+    try:
+        import cv2
+        import numpy as np
+        from .tiles import lonlat_to_px, meters_per_px
+        if index.h.get("synthetic"):
+            return None
+        z = index.h["zoom"]
+        x, y = lonlat_to_px(place["lon"], place["lat"], z)
+        x, y = x - index.h["px0"], y - index.h["py0"]
+        w = int(round(place["km"] * 1000 / meters_per_px(place["lat"], z)))
+        H, W = index.mosaic.shape
+        x0, y0 = int(round(x - w / 2)), int(round(y - w / 2))
+        if w < 16 or x0 < 0 or y0 < 0 or x0 + w > W or y0 + w > H:
+            return None
+        real = cv2.resize(np.asarray(index.mosaic[y0:y0 + w, x0:x0 + w], np.float32), (n, n), interpolation=cv2.INTER_CUBIC)
+        sand = cv2.GaussianBlur(real, (0, 0), n / 26)
+        return dict(n=n, real=np.round(real).astype(int).ravel().tolist(), sand=np.round(sand).astype(int).ravel().tolist(),
+                    name=place["name"], km=place["km"])
+    except Exception:
+        return None
+
+
+STATIC_CSS = """
+.examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin: 0 0 40px; }
+.ex { display: block; background: var(--white); border-radius: var(--r-l); overflow: hidden; color: var(--ink);
+  transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+.ex:hover { text-decoration: none; transform: scale(1.015); box-shadow: 0 20px 40px -24px rgba(0,0,0,.35); }
+.ex .pics { display: grid; grid-template-columns: 1fr 1fr; }
+.ex img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+.ex div.t { padding: 16px 20px 20px; }
+.ex b { display: block; font-size: 19px; font-weight: 600; }
+.ex span { color: var(--ink-2); font-size: 14px; }
+.run h3 { font-size: 24px; font-weight: 700; margin: 0 0 6px; }
+.run p { color: var(--ink-2); margin: 0 0 18px; }
+.run pre { margin: 0; background: var(--light); border-radius: var(--r-m); padding: 18px 20px; overflow-x: auto;
+  font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0; color: var(--ink); }
+.run .gh { margin-top: 22px; text-align: center; }
+"""
+
+
+def _static_try(examples):
+    cards = "".join(
+        f'<a class="ex reveal" href="{_html.escape(e["href"])}"><div class="pics">'
+        f'<img src="{_html.escape(e["photo"])}" alt="Sculpture photo"><img src="{_html.escape(e["match"])}" alt="Matching terrain"></div>'
+        f'<div class="t"><b>{_html.escape(e["title"])}</b><span>{_html.escape(e["sub"])}</span></div></a>'
+        for e in (examples or []))
+    ex_html = f'<div class="examples">{cards}</div>' if cards else ""
+    return f"""<section class="try light" id="try">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2 class="section-title">Try it.</h2>
+      <p class="lede">{"Open a real search below, or run" if cards else "Run"} it on your own Mac. Your photos never leave your computer.</p>
+    </div>
+    {ex_html}
+    <div class="card run reveal">
+      <h3>Run it yourself.</h3>
+      <p>About five minutes on a Mac with Python 3.10 or newer.</p>
+      <pre>git clone https://github.com/Tilakkumar13/sand2earth
+cd sand2earth
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt
+python build_index.py --zoom 6 --name world_z6
+python app.py --index data/world_z6</pre>
+      <div class="gh"><a class="pill" href="https://github.com/Tilakkumar13/sand2earth">View on GitHub</a></div>
+    </div>
+  </div>
+</section>"""
+
+
+def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None, hero=None,
+                static=False, examples=None):
     text = ("A neural network trained on thousands of real landscapes picks the candidates."
             if matcher == "learned" else
             "A rotation-proof terrain fingerprint picks the candidates.")
@@ -544,7 +641,20 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
     else:
         top1, rot, ms_txt = "77%", "2°", "0.6 s"
         note = "Run evaluate.py to measure accuracy on your own index."
-    return (_PAGE.replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS).replace("%%MARK%%", MARK_SVG)
+    import json as _json
+    cap = (f"These mountains are real: {hero['name']}, {hero['km']} km across. "
+           f"The sand above was the same place, smoothed like a hand-made copy.") if hero else \
+          f"Searched against {count:,} stretches of real terrain."
+    page = _PAGE
+    if static:
+        a = page.index('<section class="try light" id="try">')
+        b = page.index("</section>", a) + len("</section>")
+        page = page[:a] + _static_try(examples) + page[b:]
+        page = page.replace("</style></head>", STATIC_CSS + "</style></head>", 1)
+        page = page.replace("<p class=\"lede\">Your photo stays on this computer.</p>", "")
+        page = page.replace('<a class="pill small" href="#try">Try it</a>', '<a class="pill small" href="#try">Try it</a>')
+    return (page.replace("%%HERODATA%%", _json.dumps(hero) if hero else "null").replace("%%HEROCAP%%", _html.escape(cap))
+            .replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS).replace("%%MARK%%", MARK_SVG)
             .replace("%%IMPORTMAP%%", IMPORTMAP).replace("%%REVEAL%%", _reveal())
             .replace("%%COUNT%%", f"{count:,}").replace("%%SIZES%%", _join(sizes_km))
             .replace("%%MATCHER%%", text).replace("%%TOP1%%", _html.escape(top1.replace(" ", "")))

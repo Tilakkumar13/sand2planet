@@ -79,14 +79,21 @@ def write_outputs(out_dir, index, query, results, photo=None):
     trio = ""
     if best:
         mirror = " The match uses the mirror image of your photo." if best["flipped"] else ""
+        a = best["agree"]
+        if a >= 70:
+            eyebrow, strength = "Your landscape exists in", "a strong match"
+        elif a >= 45:
+            eyebrow, strength = "Your landscape looks most like", "a fair match"
+        else:
+            eyebrow, strength = "The closest place, but a loose fit, is", "a loose match"
         hero = f"""
   <section class="rhero dark">
     <div class="wrap">
-      <p class="eyebrow reveal">Your landscape exists in</p>
+      <p class="eyebrow reveal">{eyebrow}</p>
       <h1 class="place grad reveal" data-geo="0">{best['coord']}</h1>
       <p class="coords num reveal" data-coord="0" hidden>{best['coord']}</p>
-      <p class="lede reveal">A stretch of terrain about <span class="w num">{best['km']} km</span> across, matching your
-        sculpture's shape at <span class="w num">{best['agree']}%</span>. On the map, the top edge of your sandbox
+      <p class="lede reveal">A stretch of terrain about <span class="w num">{best['km']} km</span> across, {strength}
+        for your sculpture's shape (<span class="w num">{best['agree']}%</span> agreement). On the map, the top edge of your sandbox
         faces <span class="w">{best['facing']}</span>.{mirror}</p>
       <div class="links reveal">{best['links']}</div>
     </div>
