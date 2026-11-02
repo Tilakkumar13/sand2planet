@@ -246,6 +246,15 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 }
 
 #srv { margin: 14px 0 0; text-align: center; color: var(--ink-2); font-size: 14px; min-height: 1.4em; }
+#report { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; z-index: 1000; background: #000; }
+html.has-report, html.has-report body { overflow: hidden; }
+.cam { position: fixed; inset: 0; z-index: 1001; background: rgba(0,0,0,.86); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.cambox { width: min(560px, 100%); text-align: center; color: #f5f5f7; }
+.camview { position: relative; aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: #111; }
+.camview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.camview i { position: absolute; inset: 5%; border: 2px solid rgba(255,255,255,.7); border-radius: 14px; pointer-events: none; }
+.cambox p { margin: 16px 0; color: #a1a1a6; font-size: 15px; }
+.camctl { display: flex; gap: 12px; justify-content: center; }
 .runlocal { text-align: center; color: var(--ink-2); font-size: 14px; margin: 18px 0 0; }
 </style></head>
 <body>
@@ -332,12 +341,12 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       <p class="lede">We take real places, bend them into rough, rotated, blurry copies like a hand-made sculpture, and check whether the search traces each one back.</p>
     </div>
     <div class="grid4">
-      <div class="stat reveal"><span class="big grad num">89%</span><p>of distorted copies traced back to the right place on the first try.</p></div>
+      <div class="stat reveal"><span class="big grad num">69%</span><p>of distorted copies traced back to the right place on the first try.</p></div>
       <div class="stat reveal"><span class="big grad num">88,531</span><p>stretches of real terrain, 157 to 626 km across.</p></div>
-      <div class="stat reveal"><span class="big grad num">2°</span><p>typical error in which way your sandbox faces.</p></div>
-      <div class="stat reveal"><span class="big grad num">0.4 s</span><p>per search, on a laptop.</p></div>
+      <div class="stat reveal"><span class="big grad num">3°</span><p>typical error in which way your sandbox faces.</p></div>
+      <div class="stat reveal"><span class="big grad num">1.8 s</span><p>per search, on a laptop.</p></div>
     </div>
-    <p class="note reveal">From 100 simulated sculptures per test with random rotation, scale, depth distortion, blur and noise, taken from regions held out of training. Run evaluate.py to measure it yourself. Real clay photos are the next test.</p>
+    <p class="note reveal">From 300 simulated sculptures in regions held out of training, placed anywhere and at any size, with random rotation, depth distortion, blur and noise. The test starts from a height map, so it does not include reading depth from a photo: real photos of real sand are the next test.</p>
   </div>
 </section>
 
@@ -643,7 +652,57 @@ window.__terrainReady = true;
     const parts = await (await fetch(ENGINE + "report.json")).json();
     const html = rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
     stage(3);
-    location.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    showReport(html);
+  }
+  // The results page opens over this one (works in every browser, including in-app ones); Back closes it.
+  function showReport(html) {
+    const f = document.createElement("iframe");
+    f.id = "report"; f.title = "Your result";
+    f.srcdoc = html.replace("<head>", '<head><base target="_top">');
+    document.body.appendChild(f); document.documentElement.classList.add("has-report");
+    history.pushState({ report: 1 }, "", "#result");
+    go.textContent = "Find my place"; go.disabled = false; prog.style.display = "none";
+  }
+  function closeReport() {
+    const f = document.getElementById("report");
+    if (f) { f.remove(); document.documentElement.classList.remove("has-report"); }
+  }
+  addEventListener("popstate", () => { if (location.hash !== "#result") closeReport(); });
+  addEventListener("hashchange", () => { if (location.hash !== "#result") closeReport(); });
+
+  // "Use camera": phones open their own camera app; computers get a live preview here.
+  const phone = /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+  if (!phone && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    $("snap").closest("label").addEventListener("click", e => { e.preventDefault(); openCamera(); });
+  }
+  async function openCamera() {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch (e) {
+      return showError(e.name === "NotAllowedError" ? "Camera access was blocked. Allow it in the address bar, or choose a photo instead."
+                                                    : "No camera found. Choose a photo instead.");
+    }
+    showError("");
+    const ov = document.createElement("div"); ov.className = "cam"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Camera");
+    ov.innerHTML = '<div class="cambox"><div class="camview"><video playsinline autoplay muted></video><i></i></div>' +
+      '<p>Hold the camera straight above your sculpture and fill the square.</p>' +
+      '<div class="camctl"><button class="pill ghost" type="button" data-x>Cancel</button><button class="pill" type="button" data-shot>Take photo</button></div></div>';
+    document.body.appendChild(ov);
+    const v = ov.querySelector("video"); v.srcObject = stream;
+    const close = () => { stream.getTracks().forEach(t => t.stop()); ov.remove(); removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    addEventListener("keydown", esc);
+    ov.querySelector("[data-x]").onclick = close;
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("[data-shot]").onclick = () => {
+      if (!v.videoWidth) return;
+      const s = Math.min(v.videoWidth, v.videoHeight), c = document.createElement("canvas");
+      c.width = c.height = s;                                  // the square you saw is the square that is searched
+      c.getContext("2d").drawImage(v, (v.videoWidth - s) / 2, (v.videoHeight - s) / 2, s, s, 0, 0, s, s);
+      c.toBlob(b => { close(); setFile(new File([b], "camera.jpg", { type: "image/jpeg" })); }, "image/jpeg", 0.92);
+    };
+    ov.querySelector("[data-shot]").focus();
   }
 
   function setFile(f) {

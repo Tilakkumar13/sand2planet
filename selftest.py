@@ -8,6 +8,11 @@ A hit = a returned match centred within half a window of the true spot.
   python selftest.py --index data/world_z6 --crude --heldout     # only places the learned model never saw
   python selftest.py --index data/world_z6 --matcher handcrafted # force the hand-crafted descriptor
   python selftest.py --index data/world_z6 --bias 200            # where do random shapes land?
+  python selftest.py --index data/world_z6 --crude --offgrid      # realistic: sandbox anywhere, any size
+
+Without --offgrid every query is centred on an indexed window and within 15 % of its size, which flatters
+the search: a real sandbox can sit anywhere and cover any area. --offgrid moves the centre up to half a
+window away and picks any size from the smallest to the largest window level.
 """
 import argparse
 import json
@@ -32,6 +37,7 @@ p.add_argument("--matcher", choices=["auto", "learned", "handcrafted"], default=
 p.add_argument("--bias", type=int, default=0, help="also run N random shapes and report the latitude of their best matches")
 p.add_argument("--examples", default="selftest_examples.png")
 p.add_argument("--json", help="write the numbers to this file")
+p.add_argument("--offgrid", action="store_true", help="queries at any position and size, not lined up with the index")
 add_device_arg(p)
 a = p.parse_args()
 apply_device_arg(a)
@@ -41,12 +47,18 @@ rng = np.random.default_rng(a.seed)
 H, W = idx.mosaic.shape
 
 
-def make_query(x, y, w):
-    scale = rng.uniform(0.85, 1.15)
+def make_query(x, y, w, f=1):
     ang = rng.uniform(0, 360)
-    span = int(w * scale)
-    pad = int(span * 0.8)
     cx, cy = x + w // 2, y + w // 2
+    if a.offgrid:   # anywhere near this window, any size between the smallest and largest level
+        cx += int(rng.uniform(-0.5, 0.5) * w)
+        cy += int(rng.uniform(-0.5, 0.5) * w)
+        span = int(w / f * 2 ** rng.uniform(0, 2))
+    else:
+        span = int(w * rng.uniform(0.85, 1.15))
+    pad = int(span * 0.8)
+    if cy - pad < 0 or cx - pad < 0 or cy + pad > H or cx + pad > W:
+        return None
     reg = np.asarray(idx.mosaic[cy - pad:cy + pad, cx - pad:cx + pad], np.float32)
     M = cv2.getRotationMatrix2D((float(pad), float(pad)), ang, 1.0)
     rot = cv2.warpAffine(reg, M, (reg.shape[1], reg.shape[0]), borderMode=cv2.BORDER_REFLECT)
@@ -59,12 +71,12 @@ def make_query(x, y, w):
     blur = rng.uniform(3.0, 6.0) if a.crude else rng.uniform(0.5, 2.0)
     q = cv2.GaussianBlur(q.astype(np.float32), (0, 0), blur)
     q += rng.normal(0, 0.04 if a.crude else 0.02, q.shape)  # sensor noise
-    return q.astype(np.float32), ang, (cx, cy)
+    return q.astype(np.float32), ang, (cx, cy), span
 
 
 # candidates: away from the mosaic edge (so the rotated crop has real data) and optionally held out
 x_, y_, w_ = idx.meta[:, 0], idx.meta[:, 1], idx.meta[:, 2]
-m_ = (w_ * 1.15 * 0.8).astype(int) + 2
+m_ = (w_ * (4.0 / idx.meta[:, 3] * 0.8 + 0.5 if a.offgrid else 1.15 * 0.8)).astype(int) + 2
 cx_, cy_ = x_ + w_ // 2, y_ + w_ // 2
 ok = (cx_ - m_ >= 0) & (cy_ - m_ >= 0) & (cx_ + m_ < W) & (cy_ + m_ < H)
 if a.heldout:
@@ -73,20 +85,29 @@ if a.heldout:
 cands = np.nonzero(ok)[0]
 if len(cands) < a.n:
     raise SystemExit(f"Only {len(cands)} usable windows; lower -n.")
-picks = rng.choice(cands, a.n, replace=False)
+picks = rng.choice(cands, min(len(cands), a.n * 3), replace=False)
 
 hits1 = hits5 = 0
 ang_err, times, examples = [], [], []
-for qi, i in enumerate(picks):
+qi = -1
+for i in picks:
     x, y, w, f = (int(v) for v in idx.meta[i])
-    q, ang, (cx, cy) = make_query(x, y, w)
+    made = make_query(x, y, w, f)
+    if made is None:
+        continue
+    q, ang, (cx, cy), span = made
+    if a.offgrid and (np.asarray(idx.mosaic[cy - span // 2:cy + span // 2, cx - span // 2:cx + span // 2]) > 0).mean() < 0.7:
+        continue                                   # mostly sea: not a fair query
+    qi += 1
+    if qi == a.n:
+        break
     t0 = time.time()
     qp, res = idx.search(q, k=5)
     times.append(time.time() - t0)
     found = None
     for rank, r in enumerate(res):
         rx, ry = r["x"] + r["w"] / 2, r["y"] + r["w"] / 2
-        if math.hypot(rx - cx, ry - cy) < 0.5 * max(w, r["w"]):
+        if math.hypot(rx - cx, ry - cy) < 0.5 * max(span, r["w"]):
             found = rank
             break
     if found is not None:
@@ -103,8 +124,9 @@ for qi, i in enumerate(picks):
     tag = "top-1" if found == 0 else (f"top-{found + 1}" if found is not None else "miss")
     print(f"query {qi + 1:3d}/{a.n}: level x{f}  {tag}")
 
-out = dict(index=a.index, matcher=idx.matcher, windows=int(len(idx.meta)), n=a.n, crude=a.crude,
-           heldout=a.heldout, recall_at_1=hits1 / a.n, recall_at_5=hits5 / a.n,
+n_done = min(qi + 1, a.n)
+out = dict(index=a.index, matcher=idx.matcher, windows=int(len(idx.meta)), n=n_done, crude=a.crude,
+           heldout=a.heldout, offgrid=a.offgrid, recall_at_1=hits1 / n_done, recall_at_5=hits5 / n_done,
            rotation_error_deg=float(np.median(ang_err)) if ang_err else None,
            search_ms=float(np.median(times) * 1000))
 

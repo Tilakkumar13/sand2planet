@@ -145,8 +145,11 @@ def masked_zscore(x, mask):
     return (x - mu) / sd * m
 
 
-def make_pairs(ctx, crude=0.5, generator=None):
-    """ctx: (B,1,C,C) terrain context (window = centre 2/3). Returns (sculpture, clean) both (B,1,64,64)."""
+def make_pairs(ctx, crude=0.5, generator=None, shift=0.03, scale=(0.85, 1.15)):
+    """ctx: (B,1,C,C) terrain context, the indexed window is its centre 64/C. Returns (sculpture, clean), both (B,1,64,64).
+
+    The sculpture is a rotated copy of an area `scale` times the window, centred up to `shift` windows away from it:
+    a real sandbox never lines up exactly with the index grid (off by up to 1/8 window, and up to sqrt(2) in size)."""
     B, _, C, _ = ctx.shape
     dev, dt = ctx.device, ctx.dtype
     g = generator
@@ -159,9 +162,10 @@ def make_pairs(ctx, crude=0.5, generator=None):
     clean = masked_zscore(clean, mask)
 
     th = U(B) * 2 * math.pi
-    sc = 0.85 + 0.3 * U(B)
+    sc = torch.exp(math.log(scale[0]) + (math.log(scale[1]) - math.log(scale[0])) * U(B))
     a = (PATCH / C) * sc
-    tx, ty = (U(B) - .5) * 0.08, (U(B) - .5) * 0.08
+    win = 2 * PATCH / C                                                       # window width in grid units
+    tx, ty = (U(B) - .5) * 2 * shift * win, (U(B) - .5) * 2 * shift * win
     A = torch.stack([torch.stack([a * torch.cos(th), -a * torch.sin(th), tx], 1),
                      torch.stack([a * torch.sin(th), a * torch.cos(th), ty], 1)], 1)
     grid = F.affine_grid(A, (B, 1, PATCH, PATCH), align_corners=False)

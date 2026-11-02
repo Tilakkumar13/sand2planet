@@ -50,7 +50,8 @@ def export_onnx(encoder, path):
     import torch
     enc = encoder.to("cpu").eval()
     x = torch.randn(4, 1, 64, 64)
-    torch.onnx.export(enc, (x,), path, input_names=["z"], output_names=["e"], opset_version=17, dynamo=False)
+    torch.onnx.export(enc, (x,), path, input_names=["z"], output_names=["e"], opset_version=17, dynamo=False,
+                      dynamic_axes={"z": {0: "batch"}, "e": {0: "batch"}})
 
 
 def export_pack(index, out_dir, log=print):
@@ -92,7 +93,7 @@ def export_pack(index, out_dir, log=print):
                 px0=index.h["px0"], py0=index.h["py0"], H=int(H), W=int(W), tile=TILE, tiles=tab,
                 levels=sorted(index.levels), patch=PATCH, blur=BLUR_SIGMA,
                 bytes=sum(os.path.getsize(os.path.join(eng, n)) for n in ("meta.bin.gz", "emb.bin", "mosaic.bin.gz", "matcher.onnx")),
-                shortlist=2500, weights=dict(emb=0.45, desc=0.1, ncc=0.45), rot_step=6)
+                shortlist=2500, weights=dict(emb=0.45, desc=0.1, ncc=0.45), rot_step=6, refit=60)
     with open(os.path.join(eng, "index.json"), "w") as f:
         json.dump(info, f, separators=(",", ":"))
     sizes = {n: os.path.getsize(os.path.join(eng, n)) / 1e6 for n in os.listdir(eng)}

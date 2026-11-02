@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from .terrain import PATCH, BLUR_SIGMA, prep, zscore, describe, refine
+from .terrain import PATCH, BLUR_SIGMA, prep, zscore, describe, refine, rotate
 from .tiles import px_to_lonlat, meters_per_px
 
 
@@ -162,13 +162,68 @@ class Index:
             out[s:s + 250_000] = np.asarray(mat[s:s + 250_000], np.float32) @ q
         return out
 
-    def search(self, height, k=5, shortlist=None, rot_step=6, allow_flip=False, levels=None):
+    # The index is a grid: windows every 1/4 window, in sizes that double. A real sandbox sits anywhere and
+    # covers any area, so the best candidates are re-fitted: slid by up to 1/4 window, resized by up to sqrt(2)
+    # either way and turned a little, keeping whatever fits the sculpture best.
+    def _refit_boxes(self, cx, cy, w, shifts, scales):
+        H, W = self.mosaic.shape
+        out = []
+        for sc in scales:
+            ws = int(round(w * sc))
+            for dy in shifts:
+                for dx in shifts:
+                    nx, ny = int(round(cx + dx * w - ws / 2)), int(round(cy + dy * w - ws / 2))
+                    if 0 <= nx and 0 <= ny and nx + ws <= W and ny + ws <= H:
+                        out.append((nx, ny, ws, dx, dy, sc))
+        return out
+
+    def _refine(self, qz, x, y, w, angle, flipped, rot_step):
+        """Coarse to fine: 27 windows (shift 0 or 1/4 window either way, size x0.71/1/1.41), then 27 around the best
+        (1/8 window, x0.84/1.19 steps), then the angle +-2 steps."""
+        from .terrain import _masked_unit
+        cx, cy = x + w / 2, y + w / 2
+        q0 = _masked_unit(rotate(qz, angle, flipped)[None])[0]
+        best = (-1.0, None, None, None)                      # ncc, box, unit vector, (dx, dy, sc)
+        stages = [((-0.25, 0.0, 0.25), (0.71, 1.0, 1.41))]
+        for st in range(2):
+            if st == 1:
+                if best[3] is None:
+                    break
+                bdx, bdy, bsc = best[3]
+                stages = [(None, None)]
+            boxes = (self._refit_boxes(cx, cy, w, *stages[0]) if st == 0 else
+                     [b for b in self._refit_boxes(cx + bdx * w, cy + bdy * w, w, (-0.125, 0.0, 0.125),
+                                                   (bsc / 1.19, bsc, bsc * 1.19))])
+            if not boxes:
+                break
+            C = _masked_unit(zscore(np.stack([self.patch(nx, ny, ws) for nx, ny, ws, *_ in boxes])))
+            s0 = C @ q0
+            b = int(np.argmax(s0))
+            if s0[b] > best[0]:
+                nx, ny, ws, dx, dy, sc = boxes[b]
+                if st == 1:   # shifts in stage 2 are relative to the stage-1 centre
+                    dx, dy, sc = bdx + dx, bdy + dy, sc
+                best = (float(s0[b]), (nx, ny, ws), C[b], (dx, dy, sc))
+        if best[1] is None:
+            return (-1.0, angle, (x, y, w))
+        res = (best[0], angle, best[1])
+        for da in (-2 * rot_step, -rot_step, rot_step, 2 * rot_step):
+            a = (angle + da) % 360
+            v = float(best[2] @ _masked_unit(rotate(qz, a, flipped)[None])[0])
+            if v > res[0]:
+                res = (v, a, best[1])
+        return res
+
+    def search(self, height, k=5, shortlist=None, rot_step=6, allow_flip=False, levels=None, refit=60):
         q = prep(height)
         qz = zscore(q)[0]
-        d_sim = self._scores(self.desc, describe(qz)[0])
+        qd = describe(qz)[0]
+        d_sim = self._scores(self.desc, qd)
+        qe = None
         if self.emb is not None:
             from .learned import embed
-            e_sim = self._scores(self.emb, embed(self.encoder, qz[None], tta=True)[0])
+            qe = embed(self.encoder, qz[None], tta=True)[0]
+            e_sim = self._scores(self.emb, qe)
             sl = min(shortlist or 2500, len(e_sim))
             sd = max(1, sl // 4)
             # union of both shortlists keeps the hand-crafted view as a safety net
@@ -189,10 +244,31 @@ class Index:
         ncc, ang, fl = refine(qz, zscore(cands), rot_step, allow_flip)
         score = first + w_ncc * ncc
         order = np.argsort(-score)
+        geom = {}                                             # j -> refined (x, y, w)
+        if refit:
+            ncc, ang = ncc.copy(), ang.copy()
+            for j in order[:refit]:
+                x, y, w, _ = (int(v) for v in self.meta[pool[j]])
+                best = self._refine(qz, x, y, w, int(ang[j]), bool(fl[j]), rot_step)
+                if best[0] > ncc[j]:
+                    ncc[j], ang[j] = best[0], best[1]
+                    geom[j] = best[2]
+            if geom and self.emb is not None:                  # re-score the refitted windows with the matcher too
+                from .learned import embed
+                js = list(geom)
+                pz = zscore(np.stack([self.patch(*geom[j]) for j in js]))
+                pe = embed(self.encoder, pz, tta=True) @ qe
+                pd = describe(pz) @ qd
+                for j, ev, dv in zip(js, pe, pd):
+                    first[j] = max(first[j], 0.45 * ev + 0.1 * dv)
+            score = first + w_ncc * ncc
+            order = np.argsort(-score)
 
         results, kept = [], []
         for j in order:
             x, y, w, f = (int(v) for v in self.meta[pool[j]])
+            if j in geom:
+                x, y, w = geom[j]
             cx, cy = x + w / 2, y + w / 2
             if any(math.hypot(cx - kx, cy - ky) < 0.6 * max(w, kw) for kx, ky, kw in kept):
                 continue

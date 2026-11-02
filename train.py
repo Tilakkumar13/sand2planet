@@ -3,6 +3,7 @@
   python train.py --index data/world_z6                     # Mac GPU (MPS), ~15-30 min
   python train.py --index data/world_z6 --preset cpu        # CPU only, smaller model, ~20-40 min on an M3 Air
   python train.py --index data/world_z6 --preset cpu-quick  # CPU smoke test, ~5 min
+  python train.py --index data/world_z6 --preset offgrid    # CPU, robust to sandboxes that don't line up with the index
 
 Then add its embeddings to any index and compare:
   python embed_index.py --index data/world_z6 --model models/matcher.pt
@@ -32,6 +33,9 @@ PRESETS = {
     # half-width model and smaller batches: 4-5x less work per step, fits a fanless laptop
     "cpu": dict(samples=20000, val=1000, steps=3000, batch=128, width=16, eval_every=500, device="cpu"),
     "cpu-quick": dict(samples=6000, val=500, steps=600, batch=96, width=16, eval_every=200, device="cpu"),
+    # real sandboxes: any position (up to 1/8 window off the grid, trained to 0.15) and any size (up to sqrt 2 off)
+    "offgrid": dict(samples=16000, val=1000, steps=4000, batch=128, width=16, eval_every=500, device="cpu",
+                    context=144, shift=0.15, scale_min=0.7, scale_max=1.42),
 }
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -46,6 +50,10 @@ p.add_argument("--lr", type=float, default=2e-3)
 p.add_argument("--width", type=int, default=32)
 p.add_argument("--dim", type=int, default=128)
 p.add_argument("--crude", type=float, default=0.5, help="share of batches shaped like rough sculptures")
+p.add_argument("--context", type=int, default=96, help="context side in px; the window is its centre 64 px")
+p.add_argument("--shift", type=float, default=0.03, help="max offset of the sculpture from the window, in windows")
+p.add_argument("--scale-min", type=float, default=0.85)
+p.add_argument("--scale-max", type=float, default=1.15)
 p.add_argument("--eval-every", type=int, default=500)
 p.add_argument("--out", default="models/matcher.pt")
 p.add_argument("--seed", type=int, default=0)
@@ -59,7 +67,8 @@ rng = np.random.default_rng(a.seed)
 if a.device and a.device != "auto":
     os.environ["S2E_DEVICE"] = a.device
 dev = pick_device()
-CTX = 96                                   # context side; the window is the centre 64 px
+CTX = a.context                            # context side; the window is the centre 64 px
+AUG = dict(shift=a.shift, scale=(a.scale_min, a.scale_max))
 idx = Index(a.index, matcher="handcrafted")
 H, W = idx.mosaic.shape
 
@@ -109,7 +118,7 @@ def validate():
     g = torch.Generator(device=dev).manual_seed(123)
     qs, ps = [], []
     for s in range(0, len(vbank), 500):
-        q, c = make_pairs(to_dev(vbank[s:s + 500]), crude=1.0, generator=g)  # judge on rough sculptures
+        q, c = make_pairs(to_dev(vbank[s:s + 500]), crude=1.0, generator=g, **AUG)  # judge on rough, off-grid sculptures
         qs.append(model(q)); ps.append(model(c))
     q, c = torch.cat(qs), torch.cat(ps)
     rank = (q @ c.T).argsort(1, descending=True)
@@ -125,7 +134,7 @@ print(f"[train] untrained: held-out recall@1 {r1:.1%}  @10 {r10:.1%}  (among {le
 t0 = time.time()
 for step in range(1, a.steps + 1):
     ids = rng.integers(0, len(bank), a.batch)
-    q, c = make_pairs(to_dev(bank[ids]), crude=a.crude)
+    q, c = make_pairs(to_dev(bank[ids]), crude=a.crude, **AUG)
     eq, ec = model(q), model(c)
     logits = logit_scale.exp().clamp(max=100) * eq @ ec.T
     target = torch.arange(a.batch, device=dev)
@@ -143,7 +152,7 @@ for step in range(1, a.steps + 1):
         flag = ""
         if r1 > best:
             best = r1
-            save_encoder(model, a.out, dict(step=step, val_r1=r1, val_r10=r10, index=a.index))
+            save_encoder(model, a.out, dict(step=step, val_r1=r1, val_r10=r10, index=a.index, aug=AUG, preset=a.preset))
             flag = "  saved"
         print(f"\n[train] step {step}: held-out recall@1 {r1:.1%}  @10 {r10:.1%}{flag}")
 

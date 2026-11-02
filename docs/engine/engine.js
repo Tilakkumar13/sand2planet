@@ -306,7 +306,8 @@ export class Engine {
     for (let yy = 0; yy < w; yy++) {
       const gy = y + yy, ty = (gy / T) | 0, oy = gy - ty * T;
       for (let xx = 0; xx < w;) {
-        const gx = x + xx, tx = (gx / T) | 0, ox = gx - tx * T, k = this.tileOf[ty * this.ntx + tx];
+        const gx = x + xx, tx = (gx / T) | 0, ox = gx - tx * T;
+        const k = gx >= this.info.W || gy >= this.info.H || gy < 0 ? -1 : this.tileOf[ty * this.ntx + tx];
         const run = Math.min(T - ox, w - xx);
         if (k < 0) { xx += run; continue; }
         const lo = this.tileLo[k], sc = this.tileScale[k], base = k * T * T + oy * T + ox, o = yy * w + xx;
@@ -384,12 +385,17 @@ export class Engine {
       let dp = 0; for (let j = 0; j < 176; j++) dp += cd[j] * qd[j];
       let best = -Infinity, bv = null;
       for (const v of variants) { let s = 0; const vv = v.v; for (let j = 0; j < NM; j++) s += cu[j] * vv[j]; if (s > best) { best = s; bv = v; } }
-      scored.push({ i, score: wts.emb * eSim[i] + wts.desc * dp + wts.ncc * best, ncc: best, desc: dp, angle: bv.a, flipped: bv.fl });
+      const first = wts.emb * eSim[i] + wts.desc * dp;
+      scored.push({ i, first, score: first + wts.ncc * best, ncc: best, desc: dp, angle: bv.a, flipped: bv.fl });
     }
+    scored.sort((a, b) => b.score - a.score);
+    onStage(3);
+    await this.refit(qz, e, qd, scored.slice(0, info.refit || 60), info.rot_step);
     scored.sort((a, b) => b.score - a.score);
     const results = [], kept = [];
     for (const s of scored) {
-      const x = this.meta[4 * s.i], y = this.meta[4 * s.i + 1], w = this.meta[4 * s.i + 2], f = this.meta[4 * s.i + 3];
+      const f = this.meta[4 * s.i + 3];
+      const [x, y, w] = s.geom || [this.meta[4 * s.i], this.meta[4 * s.i + 1], this.meta[4 * s.i + 2]];
       const cx = x + w / 2, cy = y + w / 2;
       if (kept.some(([kx, ky, kw]) => Math.hypot(cx - kx, cy - ky) < 0.6 * Math.max(w, kw))) continue;
       kept.push([cx, cy, w]);
@@ -397,6 +403,70 @@ export class Engine {
       if (results.length === k) break;
     }
     return { query: q, results };
+  }
+
+  // Index.search's refit: the index is a grid (every 1/4 window, sizes that double) but a sandbox can sit
+  // anywhere at any size, so the best candidates are slid by up to 1/4 window, resized by up to sqrt(2)
+  // and turned a little; refitted windows are then scored again by the matcher.
+  async refit(qz, qe, qd, top, step) {
+    const H = this.info.H, W = this.info.W, re = [];
+    let n = 0;
+    for (const s of top) {
+      if (++n % 10 === 0) await new Promise((r) => setTimeout(r, 0));
+      const x = this.meta[4 * s.i], y = this.meta[4 * s.i + 1], w = this.meta[4 * s.i + 2], cx = x + w / 2, cy = y + w / 2;
+      // read the neighbourhood once, at no more than 128 px per window
+      const half = Math.ceil(w * (0.25 + 0.71) + 2), rx = Math.max(0, Math.round(cx - half)), ry = Math.max(0, Math.round(cy - half));
+      const rw = Math.min(W - rx, 2 * half), rh = Math.min(H - ry, 2 * half);
+      if (rw < w || rh < w) continue;
+      const k = Math.max(1, w / 128), lw = Math.max(1, Math.round(rw / k)), lh = Math.max(1, Math.round(rh / k));
+      const raw = this.rawPatch(rx, ry, Math.max(rw, rh)), side = Math.max(rw, rh);
+      const reg = k > 1 ? resizeArea(raw, side, side, Math.round(side / k), Math.round(side / k)) : raw, rs = k > 1 ? Math.round(side / k) : side;
+      const q0 = maskedUnit(rotate(qz, P, s.angle, s.flipped));
+      let best = -Infinity, bb = null, bu = null, bz = null, bsh = null;
+      const tryBoxes = (ccx, ccy, shifts, scales) => {
+        for (const sc of scales) {
+          const ws = Math.round(w * sc);
+          for (const dy of shifts) for (const dx of shifts) {
+            const nx = Math.round(ccx + dx * w - ws / 2), ny = Math.round(ccy + dy * w - ws / 2);
+            if (nx < 0 || ny < 0 || nx + ws > W || ny + ws > H) continue;
+            const ox = Math.round((nx - rx) / k), oy = Math.round((ny - ry) / k), ow = Math.max(8, Math.round(ws / k));
+            if (ox < 0 || oy < 0 || ox + ow > rs || oy + ow > rs) continue;
+            const sub = new Float32Array(ow * ow);
+            for (let yy = 0; yy < ow; yy++) sub.set(reg.subarray((oy + yy) * rs + ox, (oy + yy) * rs + ox + ow), yy * ow);
+            const cz = zscore(prep(sub, ow)), cu = maskedUnit(cz);
+            let v = 0; for (let j = 0; j < NM; j++) v += cu[j] * q0[j];
+            if (v > best) { best = v; bb = [nx, ny, ws]; bu = cu; bz = cz; bsh = [ccx + dx * w, ccy + dy * w, sc]; }
+          }
+        }
+      };
+      // coarse to fine, like Index._refine: 27 windows, then 27 around the best, then the angle
+      tryBoxes(cx, cy, [-0.25, 0, 0.25], [0.71, 1, 1.41]);
+      if (bsh) { const [bx, by, bs] = bsh; tryBoxes(bx, by, [-0.125, 0, 0.125], [bs / 1.19, bs, bs * 1.19]); }
+      if (!bb) continue;
+      let ba = s.angle;
+      for (const da of [-2 * step, -step, step, 2 * step]) {
+        const a = ((s.angle + da) % 360 + 360) % 360, qu = maskedUnit(rotate(qz, P, a, s.flipped));
+        let v = 0; for (let j = 0; j < NM; j++) v += bu[j] * qu[j];
+        if (v > best) { best = v; ba = a; }
+      }
+      if (best > s.ncc) { s.ncc = best; s.angle = ba; s.geom = bb; s.z = bz; re.push(s); }
+    }
+    if (re.length) {                                   // matcher scores for the refitted windows
+      const x = new Float32Array(re.length * 4 * P * P);
+      re.forEach((s, j) => { for (let r = 0; r < 4; r++) x.set(rot90(s.z, r), (j * 4 + r) * P * P); });
+      const out = await this.session.run({ z: new this.ort.Tensor("float32", x, [re.length * 4, 1, P, P]) });
+      const D = this.info.dim, wts = this.info.weights;
+      re.forEach((s, j) => {
+        const e = new Float32Array(D);
+        for (let r = 0; r < 4; r++) for (let d = 0; d < D; d++) e[d] += out.e.data[(j * 4 + r) * D + d];
+        l2(e);
+        let ev = 0; for (let d = 0; d < D; d++) ev += e[d] * qe[d];
+        const cd = describe(s.z); let dv = 0; for (let t = 0; t < 176; t++) dv += cd[t] * qd[t];
+        s.first = Math.max(s.first, wts.emb * ev + wts.desc * dv);
+        delete s.z;
+      });
+    }
+    for (const s of top) s.score = s.first + this.info.weights.ncc * s.ncc;
   }
 
   result(x, y, w, f, s) {

@@ -120,31 +120,24 @@ faces on the real map.
 
 ## Evaluation
 
-`selftest.py` takes real places from the index, turns each one into a fake sculpture with
-random rotation, ±15 % scale, a bent height curve, tilt, blur and noise, and checks whether the
-search finds the original place again. `--crude` uses the heavier blur of rough hand-made
-shapes.
+`selftest.py` takes real places from regions the learned matcher never trained on, turns each one into a fake
+sculpture (random rotation, a bent height curve, tilt, heavy blur, noise) and checks whether the search finds the
+original place again. `--offgrid` is the realistic version: the sandbox can sit anywhere and cover any area, instead
+of lining up with an indexed window. `evaluate.py` writes the table below to `docs/results.md`.
 
-The learned matcher never trains on one in five 10°×10° cells of the planet
-([`s2e/split.py`](s2e/split.py)). `--heldout` queries only those cells, so its numbers show
-whether the network learned terrain in general rather than memorising places.
-`evaluate.py` runs every combination and writes a table to `docs/results.md`.
+| matcher | sandbox | right place first | in top 5 |
+|---|---|---|---|
+| hand-crafted | lined up | 86 % | 89 % |
+| hand-crafted | placed anywhere | 28 % | 41 % |
+| learned | lined up | 93 % | 97 % |
+| learned | placed anywhere | **69 %** | 75 % |
 
-Results on the zoom-6 world index (88,531 latitude-aware windows), 100 crude-sculpture
-queries per row, learned matcher from a 22-minute CPU training run on a MacBook Air M3
-(`--preset cpu-quick`, 600 steps):
+The first learned model was only trained on lined-up examples and found 8 % of realistically placed sandboxes. Two
+changes brought that to 69 %: training on sandboxes shifted and resized against the index grid
+(`train.py --preset offgrid`), and re-fitting the best candidates (slide, resize, turn) before the final ranking.
 
-| matcher | queries from | right place first | in top 5 | rotation error | search time |
-|---|---|---|---|---|---|
-| hand-crafted | anywhere | 77 % | 81 % | 2° | 659 ms |
-| hand-crafted | held-out regions | 76 % | 79 % | 2° | 584 ms |
-| learned | anywhere | 89 % | 92 % | 2° | 427 ms |
-| learned | held-out regions | **89 %** | **93 %** | 2° | 423 ms |
-
-The learned matcher finds the right place first 12 points more often, and it does as well
-in regions it never trained on as everywhere else, so it generalises rather than memorising
-places. With 100 queries per row the uncertainty is roughly ±6 points. The test sculptures
-are simulated; a test with photos of real clay sculptures is still to come.
+These tests start from a height map. Reading depth from a photo of real sand is not part of them yet, and is the
+next thing to measure.
 
 ## The results page
 

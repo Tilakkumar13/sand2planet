@@ -1,10 +1,17 @@
 # Matcher comparison
 
-Index `data/world_z6` (88,531 windows), 100 crude-sculpture queries per row, 2026-11-02.
+Index `data/world_z6` (88,531 windows), 100 crude-sculpture queries per row (300 for the learned "placed anywhere" row), 2026-11-03.
 
-| matcher | queries from | right place first | in top 5 | rotation error | search time |
+Every query comes from a region held out of training. "Lined up" sandboxes are centred on an indexed
+window at almost its size (the easy case); "placed anywhere" sandboxes can sit anywhere and cover any
+area, like a real one.
+
+| matcher | sandbox | right place first | in top 5 | rotation error | search time |
 |---|---|---|---|---|---|
-| handcrafted | anywhere | 77% | 81% | 2° | 659 ms |
-| handcrafted | held-out regions | 76% | 79% | 2° | 584 ms |
-| learned | anywhere | 89% | 92% | 2° | 427 ms |
-| learned | held-out regions | 89% | 93% | 2° | 423 ms |
+| handcrafted | lined up | 86% | 89% | 2° | 1264 ms |
+| handcrafted | placed anywhere | 28% | 41% | 3° | 1226 ms |
+| learned | lined up | 93% | 97% | 2° | 1788 ms |
+| learned | placed anywhere | 69% | 75% | 3° | 1812 ms |
+
+The learned "placed anywhere" row is from a larger run (300 queries, seed 3); 100-query runs with other seeds gave 63–80 %.
+None of these tests includes reading depth from a photo: they start from a distorted height map.

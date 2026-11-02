@@ -555,7 +555,57 @@ window.__terrainReady = true;
     const parts = await (await fetch(ENGINE + "report.json")).json();
     const html = rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
     stage(3);
-    location.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    showReport(html);
+  }
+  // The results page opens over this one (works in every browser, including in-app ones); Back closes it.
+  function showReport(html) {
+    const f = document.createElement("iframe");
+    f.id = "report"; f.title = "Your result";
+    f.srcdoc = html.replace("<head>", '<head><base target="_top">');
+    document.body.appendChild(f); document.documentElement.classList.add("has-report");
+    history.pushState({ report: 1 }, "", "#result");
+    go.textContent = "Find my place"; go.disabled = false; prog.style.display = "none";
+  }
+  function closeReport() {
+    const f = document.getElementById("report");
+    if (f) { f.remove(); document.documentElement.classList.remove("has-report"); }
+  }
+  addEventListener("popstate", () => { if (location.hash !== "#result") closeReport(); });
+  addEventListener("hashchange", () => { if (location.hash !== "#result") closeReport(); });
+
+  // "Use camera": phones open their own camera app; computers get a live preview here.
+  const phone = /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+  if (!phone && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    $("snap").closest("label").addEventListener("click", e => { e.preventDefault(); openCamera(); });
+  }
+  async function openCamera() {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch (e) {
+      return showError(e.name === "NotAllowedError" ? "Camera access was blocked. Allow it in the address bar, or choose a photo instead."
+                                                    : "No camera found. Choose a photo instead.");
+    }
+    showError("");
+    const ov = document.createElement("div"); ov.className = "cam"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Camera");
+    ov.innerHTML = '<div class="cambox"><div class="camview"><video playsinline autoplay muted></video><i></i></div>' +
+      '<p>Hold the camera straight above your sculpture and fill the square.</p>' +
+      '<div class="camctl"><button class="pill ghost" type="button" data-x>Cancel</button><button class="pill" type="button" data-shot>Take photo</button></div></div>';
+    document.body.appendChild(ov);
+    const v = ov.querySelector("video"); v.srcObject = stream;
+    const close = () => { stream.getTracks().forEach(t => t.stop()); ov.remove(); removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    addEventListener("keydown", esc);
+    ov.querySelector("[data-x]").onclick = close;
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("[data-shot]").onclick = () => {
+      if (!v.videoWidth) return;
+      const s = Math.min(v.videoWidth, v.videoHeight), c = document.createElement("canvas");
+      c.width = c.height = s;                                  // the square you saw is the square that is searched
+      c.getContext("2d").drawImage(v, (v.videoWidth - s) / 2, (v.videoHeight - s) / 2, s, s, 0, 0, s, s);
+      c.toBlob(b => { close(); setFile(new File([b], "camera.jpg", { type: "image/jpeg" })); }, "image/jpeg", 0.92);
+    };
+    ov.querySelector("[data-shot]").focus();
   }
 
   function setFile(f) {
@@ -623,11 +673,14 @@ def read_results(path="docs/results.md", matcher="handcrafted"):
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) == 6 and cells[0] in ("handcrafted", "learned"):
             rows[(cells[0], cells[1])] = cells
-    for key in ((matcher, "held-out regions"), (matcher, "anywhere")):
+    for key in ((matcher, "placed anywhere"), (matcher, "lined up"), (matcher, "held-out regions"), (matcher, "anywhere")):
         if key in rows:
             m, where, top1, top5, rot, ms = rows[key]
-            n = re.search(r"(\d+) crude-sculpture queries", open(path).read())
-            return dict(top1=top1, rot=rot, ms=ms, where=where, n=n.group(1) if n else "100")
+            text = open(path).read()
+            n = re.search(r"(\d+) crude-sculpture queries", text)
+            big = re.search(r"\((\d+) for the learned \"placed anywhere\" row\)", text)
+            n = big.group(1) if big and m == "learned" and where == "placed anywhere" else (n.group(1) if n else "100")
+            return dict(top1=top1, rot=rot, ms=ms, where=where, n=n)
     return None
 
 
@@ -678,6 +731,15 @@ STATIC_CSS = """
 
 LIVE_CSS = """
 #srv { margin: 14px 0 0; text-align: center; color: var(--ink-2); font-size: 14px; min-height: 1.4em; }
+#report { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; z-index: 1000; background: #000; }
+html.has-report, html.has-report body { overflow: hidden; }
+.cam { position: fixed; inset: 0; z-index: 1001; background: rgba(0,0,0,.86); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.cambox { width: min(560px, 100%); text-align: center; color: #f5f5f7; }
+.camview { position: relative; aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: #111; }
+.camview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.camview i { position: absolute; inset: 5%; border: 2px solid rgba(255,255,255,.7); border-radius: 14px; pointer-events: none; }
+.cambox p { margin: 16px 0; color: #a1a1a6; font-size: 15px; }
+.camctl { display: flex; gap: 12px; justify-content: center; }
 .runlocal { text-align: center; color: var(--ink-2); font-size: 14px; margin: 18px 0 0; }
 """
 
@@ -725,9 +787,10 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
         ms = r["ms"].replace(" ms", "")
         ms_txt = f"{float(ms) / 1000:.1f} s" if ms.replace(".", "").isdigit() else r["ms"]
         top1, rot = r["top1"], r["rot"]
-        note = (f"From {r['n']} simulated sculptures per test with random rotation, scale, depth distortion, blur and noise"
-                f"{', taken from regions held out of training' if r['where'] == 'held-out regions' else ''}. "
-                f"Run evaluate.py to measure it yourself. Real clay photos are the next test.")
+        note = (f"From {r['n']} simulated sculptures in regions held out of training, "
+                + ("placed anywhere and at any size, " if r['where'] == 'placed anywhere' else "")
+                + "with random rotation, depth distortion, blur and noise. The test starts from a height map, so it "
+                  "does not include reading depth from a photo: real photos of real sand are the next test.")
     else:
         top1, rot, ms_txt = "77%", "2°", "0.6 s"
         note = "Run evaluate.py to measure accuracy on your own index."
