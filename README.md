@@ -194,4 +194,6 @@ Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2
 Services GmbH (contains modified Copernicus Sentinel data), CC BY 4.0. Depth: Depth Anything V2.
 Place names: OpenStreetMap contributors via Nominatim. 3D: three.js.
 
-Built by Tilak Kumar, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.
+Built by [Tilak Kumar](https://tilakkumar13.github.io/), MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.
+
+**Live site:** https://tilakkumar13.github.io/sand2earth/

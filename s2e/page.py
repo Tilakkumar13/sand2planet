@@ -11,6 +11,12 @@ _PAGE = r"""<!doctype html>
 <title>Sand to Earth</title>
 <meta name="description" content="Shape a landscape with your hands, take one photo, and find where it already exists on Earth.">
 <meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sand to Earth">
+<meta property="og:description" content="Shape a landscape with your hands, take one photo, and find where it already exists on Earth.">
+<meta property="og:image" content="https://tilakkumar13.github.io/sand2earth/og.png">
+<meta property="og:url" content="https://tilakkumar13.github.io/sand2earth/">
+<meta name="twitter:card" content="summary_large_image">
 %%FONTS%%
 <style>
 %%CSS%%
@@ -317,7 +323,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
         </ul>
       </div>
     </div>
-    <p class="byline reveal">Made by Tilak Kumar, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.</p>
+    <p class="byline reveal">Made by <a href="https://tilakkumar13.github.io/">Tilak Kumar</a>, MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.</p>
   </div>
 </section>
 
@@ -325,7 +331,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
   <p>Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2016 by EOX IT Services GmbH, contains modified
     Copernicus Sentinel data, CC BY 4.0. Depth: Depth Anything V2. 3D: three.js.</p>
   <div class="rule"></div>
-  <p>Sand to Earth, 2026. Open source on GitHub.</p>
+  <p>Sand to Earth, 2026. <a href="https://github.com/Tilakkumar13/sand2earth">Open source on GitHub</a>. Made by <a href="https://tilakkumar13.github.io/">Tilak Kumar</a>.</p>
 </div></footer>
 
 <script type="application/json" id="herodata">%%HERODATA%%</script>
