@@ -166,7 +166,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     <a class="brand" href="#top">%%MARK%%Sand to Earth</a>
     <div class="links">
       <a href="#how">How it works</a><a href="#numbers">Accuracy</a><a href="#about">About</a>
-      <a class="pill small" href="#try">Try it</a>
+      %%OTHERPLANET%%<a class="pill small" href="#try">Try it</a>
     </div>
   </div>
 </nav>
@@ -245,7 +245,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     </div>
     <div class="grid4">
       <div class="stat reveal"><span class="big grad num">%%TOP1%%</span><p>of distorted copies traced back to the right place on the first try.</p></div>
-      <div class="stat reveal"><span class="big grad num">%%COUNT%%</span><p>stretches of real terrain, %%SIZES%% across.</p></div>
+      <div class="stat reveal"><span class="big grad num">%%COUNTBIG%%</span><p>stretches of real terrain, %%SIZES%% across.</p></div>
       <div class="stat reveal"><span class="big grad num">%%ROT%%</span><p>typical error in which way your sandbox faces.</p></div>
       <div class="stat reveal"><span class="big grad num">%%MS%%</span><p>per search, on a laptop.</p></div>
     </div>
@@ -295,7 +295,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
   </div>
 </section>
 
-<section class="about" id="about">
+%%MARSTEASER%%<section class="about" id="about">
   <div class="wide">
     <div class="head reveal">
       <h2 class="section-title">About the project.</h2>
@@ -403,6 +403,8 @@ const rim = new THREE.DirectionalLight(0x8fb8ff, .8); rim.position.set(2.5, 1.2,
 
 // ---------- height field (deterministic) ----------
 const HERO = JSON.parse(document.getElementById("herodata").textContent);
+const PLANET = %%PLANET%%;
+const marsRamp = ["#3a1a12", "#6e2f1c", "#a84a26", "#cf7a45", "#e9b07c", "#f6dcc0"].map(c => new THREE.Color(c));
 const N = HERO ? HERO.n : 170, R = 1;
 function hash(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, y) {
@@ -453,7 +455,8 @@ for (let i = 0; i < n; i++) {
   const t = (he[i] - lo) / (hi - lo);
   const sc = ramp(sand, (hs[i] - lo) / (hi - lo) * .9 + .05), j = .94 + .1 * hash(i * .37, i * .11);
   sc.multiplyScalar(j).toArray(cs, i * 3);
-  (HERO ? colorAtMetres(HERO.real[i]) : ramp(earth, t * t * .9 + t * .1)).toArray(ce, i * 3);
+  (PLANET === "mars" ? ramp(marsRamp, HERO ? (HERO.real[i] - rLo) / (rHi - rLo) : t)
+    : HERO ? colorAtMetres(HERO.real[i]) : ramp(earth, t * t * .9 + t * .1)).toArray(ce, i * 3);
 }
 g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
 const am = document.createElement("canvas"); am.width = am.height = 256;
@@ -513,7 +516,7 @@ window.__terrainReady = true;
   if (!$("drop")) return;                                  // static showcase: no upload box
   const ENGINE = %%ENGINE%%;                               // "" = the local app does the search; else the in-browser engine folder
   const PLANETS = %%PLANET_DATA%%;                         // planet -> folder with its index (in-browser search)
-  let planet = "earth";
+  let planet = %%PLANET%%;
   const engines = {}, warms = {};
   const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress"), srv = $("srv");
   let file = null, timers = [], eng = null, rep = null, warming = null;
@@ -677,6 +680,21 @@ def _join(km):
     return parts[0] + " to " + parts[-1] + " km"
 
 
+def read_mars_results(path="docs/results.md"):
+    """The 'placed anywhere' row of the Mars table in docs/results.md."""
+    if not os.path.exists(path):
+        return None
+    text = open(path).read()
+    if "## Mars" not in text:
+        return None
+    for line in text.split("## Mars", 1)[1].splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 6 and cells[1] == "placed anywhere":
+            n = re.search(r"(\d+) crude-sculpture queries", text.split("## Mars", 1)[1])
+            return dict(top1=cells[2], rot=cells[4], ms=cells[5], where="placed anywhere", n=n.group(1) if n else "100")
+    return None
+
+
 def read_results(path="docs/results.md", matcher="handcrafted"):
     """Pick the row matching the active matcher from evaluate.py's table (held-out row preferred)."""
     if not os.path.exists(path):
@@ -706,12 +724,12 @@ def hero_data(index, place=HERO_PLACE, n=128):
         import cv2
         import numpy as np
         from .tiles import lonlat_to_px, meters_per_px
-        if index.h.get("synthetic") or index.h.get("body", "earth") != "earth":
+        if index.h.get("synthetic"):
             return None
         z = index.h["zoom"]
         x, y = lonlat_to_px(place["lon"], place["lat"], z)
         x, y = x - index.h["px0"], y - index.h["py0"]
-        w = int(round(place["km"] * 1000 / meters_per_px(place["lat"], z)))
+        w = int(round(place["km"] * 1000 / index.mpp(place["lat"])))
         H, W = index.mosaic.shape
         x0, y0 = int(round(x - w / 2)), int(round(y - w / 2))
         if w < 16 or x0 < 0 or y0 < 0 or x0 + w > W or y0 + w > H:
@@ -741,6 +759,71 @@ STATIC_CSS = """
 .run .gh { margin-top: 22px; text-align: center; }
 """
 
+
+PLANET_CSS = """
+.gnav .otherp { color: #ff9b6b; }
+.gnav .otherp.earth { color: #8fd0ff; }
+.marsteaser { padding: 140px 0; text-align: center; background: radial-gradient(70% 80% at 50% 100%, #8c2a17 0%, #2a0f08 55%, #000 100%); }
+.marsteaser .kick { color: #ff9b6b; font-weight: 600; font-size: 17px; margin: 0 0 8px; }
+.marsteaser .section-title { background: linear-gradient(100deg, #f6dcc0, #e9a86f 40%, #c9562a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.marsteaser .lede { color: #d7c2b6; max-width: 32em; margin: 12px auto 30px; }
+.marsteaser .pill { background: #c1440e; }
+"""
+
+MARS_TEASER = """<section class="marsteaser dark">
+  <div class="wrap reveal">
+    <p class="kick">New</p>
+    <h2 class="section-title">Now on Mars.</h2>
+    <p class="lede">Same sand, another planet. Find where your landscape exists among Olympus Mons, Valles Marineris and
+      thousands of craters, mapped by NASA's Mars Global Surveyor.</p>
+    <a class="pill" href="mars/">Try Sand to Mars</a>
+  </div>
+</section>
+"""
+
+MARS_CSS = """
+:root { --grad: linear-gradient(100deg, #f6dcc0 0%, #e9a86f 30%, #c9562a 66%, #8c2a17 100%); --blue: #c9562a; }
+.pill:not(.ghost) { background: #c1440e; }
+.pill:not(.ghost):hover { background: #a63a0c; }
+.pill.ghost { color: #ff9b6b; border-color: rgba(255,155,107,.5); }
+.light .pill.ghost, #drop .pill.ghost { color: #c1440e; border-color: rgba(193,68,14,.4); }
+.hero .glow { background: radial-gradient(60% 50% at 50% 60%, rgba(193,68,14,.28), transparent 70%); }
+.stats.dark { background: radial-gradient(80% 60% at 50% 0%, #2a120a 0%, #000 70%); }
+#progress li.on i { border-color: #c1440e; border-right-color: transparent; }
+"""
+
+# Sand to Mars: the same page, with Mars words, data and colours.
+MARS_TEXT = [
+    ("<title>Sand to Earth</title>", "<title>Sand to Mars</title>"),
+    ('content="Sand to Earth"', 'content="Sand to Mars"'),
+    ("find where it already exists on Earth.", "find where it exists on Mars."),
+    ("https://tilakkumar13.github.io/sand2earth/\">", "https://tilakkumar13.github.io/sand2earth/mars/\">"),
+    ('aria-label="Sand to Earth"', 'aria-label="Sand to Mars"'),
+    ('%%MARK%%Sand to Earth</a>', '%%MARK%%Sand to Mars</a>'),
+    ('<h1 class="grad">Sand to Earth.</h1>', '<h1 class="grad">Sand to Mars.</h1>'),
+    ("Shape a landscape with your hands. Find where it already exists.", "Shape a landscape with your hands. Find where it exists on Mars."),
+    ('<p class="beat">Find it on Earth.', '<p class="beat">Find it on Mars.'),
+    ('Sand <i><b id="mixbar"></b></i> Earth', 'Sand <i><b id="mixbar"></b></i> Mars'),
+    ("Landforms repeat. The same uplift, erosion and rivers carve the same shapes on every continent.\n      <strong>So the ridge you press into clay on a café table very likely exists somewhere, at full size.</strong>",
+     "Mars has a volcano almost three times the height of Everest, a canyon as long as the United States and craters\n"
+     "      everywhere. <strong>Press a shape into sand, and find the place on Mars that looks like it.</strong>"),
+    ('stop-color="#7fc4ff"', 'stop-color="#f0a070"'), ('stop-color="#0b4a8f"', 'stop-color="#7a2a14"'),
+    ('fill="#6aa86f"', 'fill="#b5552b"'),
+    ("Three steps from a handful of sand to a real place on the map.", "Three steps from a handful of sand to a real place on Mars."),
+    ("compared with", "compared with"),
+    ("We take real places, bend them into rough, rotated, blurry copies like a hand-made sculpture, and check whether the search traces each one back.",
+     "We take real places on Mars, bend them into rough, rotated, blurry copies like a hand-made sculpture, and check whether the search traces each one back."),
+    ("An experiment where GIS, computer vision and remote sensing meet: a physical sculpture goes in, a real place on the planet comes out.",
+     "An experiment where GIS, computer vision and planetary remote sensing meet: a physical sculpture goes in, a real place on Mars comes out."),
+    ("given a shape made by hand, where on Earth is it?", "given a shape made by hand, where on Mars is it?"),
+    ("make Greenland win far too often", "make the polar regions win far too often"),
+    ('<p>Elevation from the open <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (SRTM, ETOPO1 and\n          national surveys). Imagery from <a href="https://s2maps.eu">Sentinel-2 cloudless</a> by EOX. Place names from OpenStreetMap.</p>',
+     '<p>Elevation from the <a href="https://pds-geosciences.wustl.edu/missions/mgs/megdr.html">MGS MOLA laser altimeter</a>\n'
+     '          (NASA, 1.85 km grid). Imagery from Viking and MOLA via <a href="https://trek.nasa.gov/mars/">NASA Mars Trek</a>.\n'
+     '          Place names from the <a href="https://planetarynames.wr.usgs.gov/">IAU Gazetteer of Planetary Nomenclature</a>.</p>'),
+    ("<p>Sand to Earth, 2026.", "<p>Sand to Mars, part of Sand to Earth, 2026."),
+    ('<meta name="theme-color" content="#000000">', '<meta name="theme-color" content="#1a0a05">'),
+]
 
 LIVE_CSS = """
 #srv { margin: 14px 0 0; text-align: center; color: var(--ink-2); font-size: 14px; min-height: 1.4em; }
@@ -797,7 +880,9 @@ python app.py --index data/world_z6</pre>
 
 
 def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None, hero=None,
-                static=False, examples=None, public=False, engine=None, mars=None):
+                static=False, examples=None, public=False, engine=None, mars=None, planet="earth", data=None):
+    """planet="mars" renders Sand to Mars: same page, Mars words, colours, data and results.
+    engine: folder with the browser code; data: folder with this planet's index (default: engine)."""
     text = ("A neural network trained on thousands of real landscapes picks the candidates."
             if matcher == "learned" else
             "A rotation-proof terrain fingerprint picks the candidates.")
@@ -806,7 +891,11 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
         ms = r["ms"].replace(" ms", "")
         ms_txt = f"{float(ms) / 1000:.1f} s" if ms.replace(".", "").isdigit() else r["ms"]
         top1, rot = r["top1"], r["rot"]
-        note = (f"From {r['n']} simulated sculptures in regions held out of training, "
+        note = (f"From {r['n']} simulated sculptures of real places on Mars, placed anywhere and at any size, with random "
+                "rotation, depth distortion, blur and noise. The matcher learned on Earth terrain only, so every Mars place was "
+                "new to it; that is why the number is lower than on Earth. Real photos of real sand are the next test.") \
+            if planet == "mars" else \
+               (f"From {r['n']} simulated sculptures in regions held out of training, "
                 + ("placed anywhere and at any size, " if r['where'] == 'placed anywhere' else "")
                 + "with random rotation, depth distortion, blur and noise. The test starts from a height map, so it "
                   "does not include reading depth from a photo: real photos of real sand are the next test.")
@@ -829,16 +918,22 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
                              "<p class=\"lede\">Everything runs right here in your browser. Your photo never leaves your device.</p>")
                     .replace("becomes a height map, right on your Mac.", "becomes a height map, right in your browser.")
                     .replace("turns it into a height map on your Mac.", "turns it into a height map, right in your browser."))
-    page = page.replace("</style></head>", LIVE_CSS + "</style></head>", 1)
+    page = page.replace("</style></head>", LIVE_CSS + PLANET_CSS + (MARS_CSS if planet == "mars" else "") + "</style></head>", 1)
     page = page.replace("%%ENGINE%%", _json.dumps(engine if browser else ""))
-    planets = {"earth": engine} if browser else {}
-    if browser and mars:
+    planets = {planet: data or engine} if browser else {}
+    if browser and mars and planet == "earth" and False:   # (the switch moved to its own page: Sand to Mars)
         planets["mars"] = mars
-    page = page.replace("%%PLANET_DATA%%", _json.dumps(planets))
+    page = page.replace("%%PLANET_DATA%%", _json.dumps(planets)).replace("%%PLANET%%", _json.dumps(planet))
+    page = page.replace("%%OTHERPLANET%%", ('<a class="otherp" href="mars/">Sand to Mars</a>' if mars else "") if planet == "earth"
+                        else '<a class="otherp earth" href="../">Sand to Earth</a>')
+    page = page.replace("%%MARSTEASER%%", MARS_TEASER if (planet == "earth" and mars) else "")
+    if planet == "mars":
+        for x, y in MARS_TEXT:
+            page = page.replace(x, y)
     page = page.replace("%%PLANETS%%", ('<div class="planet reveal" role="group" aria-label="Search on">'
                                         '<button type="button" data-planet="earth" aria-pressed="true">Earth</button>'
                                         '<button type="button" data-planet="mars" aria-pressed="false">Mars</button></div>\n    ')
-                        if "mars" in planets else "")
+                        if False else "")                       # Earth and Mars now have their own pages
     page = page.replace("%%RUNLOCAL%%", RUN_LOCAL if browser else "")
     if static and not browser:
         a = page.index('<section class="try light" id="try">')
@@ -851,6 +946,7 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
     return (page.replace("%%HERODATA%%", _json.dumps(hero) if hero else "null").replace("%%HEROCAP%%", _html.escape(cap))
             .replace("%%FONTS%%", FONTS).replace("%%CSS%%", BASE_CSS).replace("%%MARK%%", MARK_SVG)
             .replace("%%IMPORTMAP%%", IMPORTMAP).replace("%%REVEAL%%", _reveal())
+            .replace("%%COUNTBIG%%", f"{count:,}" if count < 100000 else f"{round(count / 1000)}K")
             .replace("%%COUNT%%", f"{count:,}").replace("%%SIZES%%", _join(sizes_km))
             .replace("%%MATCHER%%", text).replace("%%TOP1%%", _html.escape(top1.replace(" ", "")))
             .replace("%%ROT%%", _html.escape(rot)).replace("%%MS%%", _html.escape(ms_txt))

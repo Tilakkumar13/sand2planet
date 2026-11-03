@@ -21,7 +21,7 @@ None of these tests includes reading depth from a photo: they start from a disto
 Index `data/mars_z5` (102,915 windows from MGS MOLA, 2.6 km/px), 100 crude-sculpture queries per row, learned matcher
 trained on Earth only (every Mars place is new to it).
 
-| matcher | sandbox | right place first | in top 5 | rotation error |
-|---|---|---|---|---|
-| learned (Earth) | lined up | 82% | 88% | 2° |
-| learned (Earth) | placed anywhere | 51% | 59% | 4° |
+| matcher | sandbox | right place first | in top 5 | rotation error | search time |
+|---|---|---|---|---|---|
+| learned (Earth) | lined up | 82% | 88% | 2° | 1506 ms |
+| learned (Earth) | placed anywhere | 51% | 59% | 4° | 1489 ms |

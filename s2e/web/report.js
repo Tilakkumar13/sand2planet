@@ -220,6 +220,7 @@ function marsPage(html, engine, results) {
   // map: NASA Trek tiles in plate carree instead of Earth imagery in Web Mercator
   const a = html.indexOf('  const s2 = L.tileLayer('), b = html.indexOf('  shapes = polys.map(');
   if (a > 0 && b > a) html = html.slice(0, a) + MARS_MAP_JS + "\n" + html.slice(b);
+  html = html.replace("Sand to Earth</a>", "Sand to Mars</a>").replace("<title>Sand to Earth", "<title>Sand to Mars");
   html = html.replace("Your sandbox, drawn to scale on Sentinel-2 imagery.", "Your sandbox, drawn to scale on Viking and MOLA maps of Mars.");
   // names: IAU Gazetteer instead of OpenStreetMap
   const labels = results.map((r) => marsName(r.lat, r.lon, engine.names));
@@ -228,7 +229,7 @@ function marsPage(html, engine, results) {
 labels.forEach((name, i) => { if (!name) return;
   document.querySelectorAll('[data-geo="' + i + '"]').forEach(el => { el.textContent = name; });
   document.querySelectorAll('[data-coord="' + i + '"]').forEach(el => el.hidden = false);
-  if (i === 0) document.title = name + " · Sand to Earth on Mars"; });
+  if (i === 0) document.title = name + " · Sand to Mars"; });
 ` + html.slice(n1);
   return html.replace(/<footer class="foot">[\s\S]*?<\/footer>/, `<footer class="foot"><div class="wrap">
   <p>Mars elevation: MGS MOLA MEGDR (NASA/GSFC/PDS). Imagery: Viking MDIM 2.1 and MOLA shaded relief via NASA Mars Trek.

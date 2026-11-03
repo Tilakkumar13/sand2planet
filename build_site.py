@@ -78,6 +78,16 @@ page = render_page(len(idx.meta), sizes, idx.matcher, hero=hero_data(idx), stati
                    mars="./mars/engine/" if browser and a.mars else None)
 with open(os.path.join(a.out, "index.html"), "w") as f:
     f.write(page)
+if browser and a.mars:   # Sand to Mars: its own page at /mars/, same design, Mars data
+    from s2e.page import read_mars_results
+    midx = Index(a.mars)
+    msizes = [PATCH * f * midx.mpp(0) / 1000 for f in sorted(midx.levels)]
+    mhero = hero_data(midx, dict(lon=-133.8, lat=18.4, km=900, name="Olympus Mons on Mars, the tallest volcano known"))
+    mpage = render_page(len(midx.meta), msizes, midx.matcher, results=read_mars_results(), hero=mhero, static=True,
+                        engine="../engine/", data="./engine/", planet="mars")
+    with open(os.path.join(a.out, "mars", "index.html"), "w") as f:
+        f.write(mpage)
+    print(f"[site] {a.out}/mars/index.html (Sand to Mars)")
 open(os.path.join(a.out, ".nojekyll"), "w").close()   # serve files as they are
 print(f"[site] {a.out}/index.html with {len(examples)} example(s)"
       + (", search runs in the browser" if browser else ", no search"))

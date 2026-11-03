@@ -262,6 +262,14 @@ html.has-report, html.has-report body { overflow: hidden; }
 .cambox p { margin: 16px 0; color: #a1a1a6; font-size: 15px; }
 .camctl { display: flex; gap: 12px; justify-content: center; }
 .runlocal { text-align: center; color: var(--ink-2); font-size: 14px; margin: 18px 0 0; }
+
+.gnav .otherp { color: #ff9b6b; }
+.gnav .otherp.earth { color: #8fd0ff; }
+.marsteaser { padding: 140px 0; text-align: center; background: radial-gradient(70% 80% at 50% 100%, #8c2a17 0%, #2a0f08 55%, #000 100%); }
+.marsteaser .kick { color: #ff9b6b; font-weight: 600; font-size: 17px; margin: 0 0 8px; }
+.marsteaser .section-title { background: linear-gradient(100deg, #f6dcc0, #e9a86f 40%, #c9562a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.marsteaser .lede { color: #d7c2b6; max-width: 32em; margin: 12px auto 30px; }
+.marsteaser .pill { background: #c1440e; }
 </style></head>
 <body>
 <nav class="gnav" aria-label="Sand to Earth">
@@ -269,7 +277,7 @@ html.has-report, html.has-report body { overflow: hidden; }
     <a class="brand" href="#top"><svg viewBox="0 0 34 22" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M2 19c5-1 7-9 15-11s11 6 15 5" stroke-width="2.2"/><path d="M8 19c3-1 5-6 9-7s7 3 10 3" stroke-width="1.2" opacity=".55"/><path d="M13 19c2 0 3-3 5-3s3 2 5 2" stroke-width="1" opacity=".35"/></svg>Sand to Earth</a>
     <div class="links">
       <a href="#how">How it works</a><a href="#numbers">Accuracy</a><a href="#about">About</a>
-      <a class="pill small" href="#try">Try it</a>
+      <a class="otherp" href="mars/">Sand to Mars</a><a class="pill small" href="#try">Try it</a>
     </div>
   </div>
 </nav>
@@ -362,7 +370,6 @@ html.has-report, html.has-report body { overflow: hidden; }
       <h2 class="section-title">Try it.</h2>
       <p class="lede">Everything runs right here in your browser. Your photo never leaves your device.</p>
     </div>
-    <div class="planet reveal" role="group" aria-label="Search on"><button type="button" data-planet="earth" aria-pressed="true">Earth</button><button type="button" data-planet="mars" aria-pressed="false">Mars</button></div>
     <div class="card reveal">
       <div id="drop" tabindex="0" role="button" aria-label="Add a photo of your sculpture">
         <div id="empty">
@@ -399,6 +406,15 @@ html.has-report, html.has-report body { overflow: hidden; }
   </div>
 </section>
 
+<section class="marsteaser dark">
+  <div class="wrap reveal">
+    <p class="kick">New</p>
+    <h2 class="section-title">Now on Mars.</h2>
+    <p class="lede">Same sand, another planet. Find where your landscape exists among Olympus Mons, Valles Marineris and
+      thousands of craters, mapped by NASA's Mars Global Surveyor.</p>
+    <a class="pill" href="mars/">Try Sand to Mars</a>
+  </div>
+</section>
 <section class="about" id="about">
   <div class="wide">
     <div class="head reveal">
@@ -507,6 +523,8 @@ const rim = new THREE.DirectionalLight(0x8fb8ff, .8); rim.position.set(2.5, 1.2,
 
 // ---------- height field (deterministic) ----------
 const HERO = JSON.parse(document.getElementById("herodata").textContent);
+const PLANET = "earth";
+const marsRamp = ["#3a1a12", "#6e2f1c", "#a84a26", "#cf7a45", "#e9b07c", "#f6dcc0"].map(c => new THREE.Color(c));
 const N = HERO ? HERO.n : 170, R = 1;
 function hash(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, y) {
@@ -557,7 +575,8 @@ for (let i = 0; i < n; i++) {
   const t = (he[i] - lo) / (hi - lo);
   const sc = ramp(sand, (hs[i] - lo) / (hi - lo) * .9 + .05), j = .94 + .1 * hash(i * .37, i * .11);
   sc.multiplyScalar(j).toArray(cs, i * 3);
-  (HERO ? colorAtMetres(HERO.real[i]) : ramp(earth, t * t * .9 + t * .1)).toArray(ce, i * 3);
+  (PLANET === "mars" ? ramp(marsRamp, HERO ? (HERO.real[i] - rLo) / (rHi - rLo) : t)
+    : HERO ? colorAtMetres(HERO.real[i]) : ramp(earth, t * t * .9 + t * .1)).toArray(ce, i * 3);
 }
 g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
 const am = document.createElement("canvas"); am.width = am.height = 256;
@@ -616,7 +635,7 @@ window.__terrainReady = true;
   const $ = id => document.getElementById(id);
   if (!$("drop")) return;                                  // static showcase: no upload box
   const ENGINE = "./engine/";                               // "" = the local app does the search; else the in-browser engine folder
-  const PLANETS = {"earth": "./engine/", "mars": "./mars/engine/"};                         // planet -> folder with its index (in-browser search)
+  const PLANETS = {"earth": "./engine/"};                         // planet -> folder with its index (in-browser search)
   let planet = "earth";
   const engines = {}, warms = {};
   const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress"), srv = $("srv");
