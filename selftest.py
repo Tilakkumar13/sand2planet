@@ -96,7 +96,7 @@ for i in picks:
     if made is None:
         continue
     q, ang, (cx, cy), span = made
-    if a.offgrid and (np.asarray(idx.mosaic[cy - span // 2:cy + span // 2, cx - span // 2:cx + span // 2]) > 0).mean() < 0.7:
+    if a.offgrid and idx.body == "earth" and (np.asarray(idx.mosaic[cy - span // 2:cy + span // 2, cx - span // 2:cx + span // 2]) > 0).mean() < 0.7:
         continue                                   # mostly sea: not a fair query
     qi += 1
     if qi == a.n:

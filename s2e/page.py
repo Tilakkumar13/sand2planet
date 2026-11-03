@@ -259,7 +259,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       <h2 class="section-title">Try it.</h2>
       <p class="lede">Your photo stays on this computer.</p>
     </div>
-    <div class="card reveal">
+    %%PLANETS%%<div class="card reveal">
       <div id="drop" tabindex="0" role="button" aria-label="Add a photo of your sculpture">
         <div id="empty">
           <svg class="icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -285,7 +285,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       <button class="pill" id="go" disabled>Find my place</button>
       <ol id="progress" aria-live="polite">
         <li><i></i>Reading depth from your photo</li>
-        <li><i></i>Comparing it with %%COUNT%% places</li>
+        <li><i></i>Comparing it with <span id="nplaces">%%COUNT%%</span> places</li>
         <li><i></i>Turning the best ones to line them up</li>
       </ol>
       <p id="error" role="alert"></p>
@@ -512,8 +512,18 @@ window.__terrainReady = true;
   const $ = id => document.getElementById(id);
   if (!$("drop")) return;                                  // static showcase: no upload box
   const ENGINE = %%ENGINE%%;                               // "" = the local app does the search; else the in-browser engine folder
+  const PLANETS = %%PLANET_DATA%%;                         // planet -> folder with its index (in-browser search)
+  let planet = "earth";
+  const engines = {}, warms = {};
   const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress"), srv = $("srv");
   let file = null, timers = [], eng = null, rep = null, warming = null;
+  document.querySelectorAll("[data-planet]").forEach(b => b.addEventListener("click", () => {
+    planet = b.dataset.planet;
+    document.querySelectorAll("[data-planet]").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    document.documentElement.dataset.planet = planet;
+    eng = engines[planet] || null; warming = warms[planet] || null; srv.textContent = "";
+    if (file) warm();
+  }));
   function showError(msg) { err.textContent = msg; err.style.display = msg ? "block" : "none"; }
 
   // In-browser search: fetch the engine, the terrain index and the depth model once (cached afterwards).
@@ -523,7 +533,7 @@ window.__terrainReady = true;
     srv.textContent = "Getting the search ready…";
     warming = (async () => {
       const [E, R] = await Promise.all([import(ENGINE + "engine.js"), import(ENGINE + "report.js")]);
-      rep = R; eng = new E.Engine(ENGINE);
+      rep = R; eng = engines[planet] = new E.Engine(PLANETS[planet] || ENGINE);
       let got = 0; const depthFiles = new Map();
       const show = () => {
         const total = (eng.info ? eng.info.bytes : 45e6) + Math.max([...depthFiles.values()].reduce((a, b) => a + b, 0), 27e6);
@@ -533,9 +543,12 @@ window.__terrainReady = true;
         eng.load((kind, n) => { got += n; show(); }),
         eng.loadDepth((kind, n, total, name) => { got += n; depthFiles.set(name, total); show(); }),
       ]);
-      srv.textContent = "Ready. The search runs on this device; your photo is never uploaded.";
+      $("nplaces").textContent = eng.info.count.toLocaleString("en");
+      srv.textContent = planet === "mars" ? "Ready to search Mars. Expect less accuracy than on Earth: the matcher learned on Earth terrain and finds the right Mars place first in about half of tests."
+                                          : "Ready. The search runs on this device; your photo is never uploaded.";
     })();
-    warming.catch(e => { warming = null; srv.textContent = ""; showError("The search couldn't load (" + e.message + "). Check your connection and try again."); });
+    warms[planet] = warming;
+    warming.catch(e => { warming = null; warms[planet] = null; srv.textContent = ""; showError("The search couldn't load (" + e.message + "). Check your connection and try again."); });
     return warming;
   }
   async function browserSearch() {
@@ -553,7 +566,7 @@ window.__terrainReady = true;
     stage(1);
     const { query, results } = await eng.search(h, { allowFlip: $("flip").checked, onStage: stage });
     const parts = await (await fetch(ENGINE + "report.json")).json();
-    const html = rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
+    const html = await rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
     stage(3);
     showReport(html);
   }
@@ -693,7 +706,7 @@ def hero_data(index, place=HERO_PLACE, n=128):
         import cv2
         import numpy as np
         from .tiles import lonlat_to_px, meters_per_px
-        if index.h.get("synthetic"):
+        if index.h.get("synthetic") or index.h.get("body", "earth") != "earth":
             return None
         z = index.h["zoom"]
         x, y = lonlat_to_px(place["lon"], place["lat"], z)
@@ -731,6 +744,12 @@ STATIC_CSS = """
 
 LIVE_CSS = """
 #srv { margin: 14px 0 0; text-align: center; color: var(--ink-2); font-size: 14px; min-height: 1.4em; }
+.planet { display: flex; justify-content: center; gap: 4px; margin: 0 auto 22px; padding: 4px; width: max-content;
+  background: rgba(0,0,0,.06); border-radius: 999px; }
+.planet button { border: 0; background: none; font: inherit; font-size: 15px; font-weight: 600; padding: 9px 22px; border-radius: 999px;
+  color: var(--ink-2); cursor: pointer; }
+.planet button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+html[data-planet="mars"] .planet button[aria-pressed="true"] { background: #c1440e; color: #fff; }
 #report { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; z-index: 1000; background: #000; }
 html.has-report, html.has-report body { overflow: hidden; }
 .cam { position: fixed; inset: 0; z-index: 1001; background: rgba(0,0,0,.86); display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -778,7 +797,7 @@ python app.py --index data/world_z6</pre>
 
 
 def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=None, hero=None,
-                static=False, examples=None, public=False, engine=None):
+                static=False, examples=None, public=False, engine=None, mars=None):
     text = ("A neural network trained on thousands of real landscapes picks the candidates."
             if matcher == "learned" else
             "A rotation-proof terrain fingerprint picks the candidates.")
@@ -812,6 +831,14 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
                     .replace("turns it into a height map on your Mac.", "turns it into a height map, right in your browser."))
     page = page.replace("</style></head>", LIVE_CSS + "</style></head>", 1)
     page = page.replace("%%ENGINE%%", _json.dumps(engine if browser else ""))
+    planets = {"earth": engine} if browser else {}
+    if browser and mars:
+        planets["mars"] = mars
+    page = page.replace("%%PLANET_DATA%%", _json.dumps(planets))
+    page = page.replace("%%PLANETS%%", ('<div class="planet reveal" role="group" aria-label="Search on">'
+                                        '<button type="button" data-planet="earth" aria-pressed="true">Earth</button>'
+                                        '<button type="button" data-planet="mars" aria-pressed="false">Mars</button></div>\n    ')
+                        if "mars" in planets else "")
     page = page.replace("%%RUNLOCAL%%", RUN_LOCAL if browser else "")
     if static and not browser:
         a = page.index('<section class="try light" id="try">')

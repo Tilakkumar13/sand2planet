@@ -54,11 +54,13 @@ def export_onnx(encoder, path):
                       dynamic_axes={"z": {0: "batch"}, "e": {0: "batch"}})
 
 
-def export_pack(index, out_dir, log=print):
+def export_pack(index, out_dir, log=print, sub="engine", shared_matcher=None):
+    """sub: folder under out_dir for this planet's data. shared_matcher: URL (relative to that folder) of a
+    matcher.onnx another pack already ships, so the browser downloads the model only once."""
     from .terrain import PATCH, BLUR_SIGMA
     if index.emb is None:
         raise SystemExit("The browser version needs the learned matcher. Run embed_index.py first.")
-    eng = os.path.join(out_dir, "engine")
+    eng = os.path.join(out_dir, sub)
     os.makedirs(eng, exist_ok=True)
     meta = np.ascontiguousarray(index.meta, np.int32)
     M = index.mosaic
@@ -87,12 +89,25 @@ def export_pack(index, out_dir, log=print):
     with gzip.open(os.path.join(eng, "meta.bin.gz"), "wb", compresslevel=9) as f:
         f.write(meta.tobytes())
 
-    export_onnx(index.encoder, os.path.join(eng, "matcher.onnx"))
+    if shared_matcher:
+        if os.path.exists(os.path.join(eng, "matcher.onnx")):
+            os.remove(os.path.join(eng, "matcher.onnx"))
+    else:
+        export_onnx(index.encoder, os.path.join(eng, "matcher.onnx"))
+    names = None
+    if os.path.exists(index.prefix + "_names.json"):
+        import shutil
+        shutil.copy(index.prefix + "_names.json", os.path.join(eng, "names.json"))
+        names = "names.json"
+    from .tiles import EARTH_CIRC
 
     info = dict(version=1, count=int(len(meta)), dim=int(emb.shape[1]), zoom=index.h["zoom"],
                 px0=index.h["px0"], py0=index.h["py0"], H=int(H), W=int(W), tile=TILE, tiles=tab,
                 levels=sorted(index.levels), patch=PATCH, blur=BLUR_SIGMA,
-                bytes=sum(os.path.getsize(os.path.join(eng, n)) for n in ("meta.bin.gz", "emb.bin", "mosaic.bin.gz", "matcher.onnx")),
+                body=index.body, circ=index.h.get("circumference", EARTH_CIRC), names=names,
+                matcher=shared_matcher or "matcher.onnx",
+                bytes=sum(os.path.getsize(os.path.join(eng, n)) for n in ("meta.bin.gz", "emb.bin", "mosaic.bin.gz", "matcher.onnx", "names.json")
+                          if os.path.exists(os.path.join(eng, n))),
                 shortlist=2500, weights=dict(emb=0.45, desc=0.1, ncc=0.45), rot_step=6, refit=60)
     with open(os.path.join(eng, "index.json"), "w") as f:
         json.dump(info, f, separators=(",", ":"))

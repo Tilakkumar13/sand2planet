@@ -6,6 +6,7 @@
 export const TRANSFORMERS = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 const ORT = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/ort.webgpu.min.mjs";
 const DEPTH_MODEL = "onnx-community/depth-anything-v2-small";
+const DEPTH = { ready: null, pipe: null, T: null, listeners: new Set() };
 
 const P = 64, N_RINGS = 16, N_ANG = 64, N_HARM = 8, NBINS = 16;
 const C = (P - 1) / 2, R_MAX = P / 2 - 1;
@@ -37,7 +38,7 @@ export function pxToLonLat(x, y, z) {
   const n = TILE_PX * 2 ** z;
   return [x / n * 360 - 180, Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI];
 }
-export const metersPerPx = (lat, z) => EARTH_CIRC * Math.cos(lat * Math.PI / 180) / (TILE_PX * 2 ** z);
+export const metersPerPx = (lat, z, circ = EARTH_CIRC) => circ * Math.cos(lat * Math.PI / 180) / (TILE_PX * 2 ** z);
 
 function reflect(p, n) {                       // OpenCV BORDER_REFLECT: fedcba|abcdefgh|hgfedcb
   if (n === 1) return 0;
@@ -269,8 +270,9 @@ export class Engine {
         fetchBytes(this.base + "meta.bin.gz", tick).then(gunzip),
         fetchBytes(this.base + "emb.bin", tick),
         fetchBytes(this.base + "mosaic.bin.gz", tick).then(gunzip),
-        fetchBytes(this.base + "matcher.onnx", tick),
+        fetchBytes(new URL(info.matcher || "matcher.onnx", new URL(this.base, globalThis.location?.href)).href, tick),
       ]);
+      this.names = info.names ? await (await fetch(this.base + info.names)).json() : null;
       this.meta = new Int32Array(meta.buffer, meta.byteOffset, meta.byteLength / 4);
       const N = info.count, D = info.dim;
       this.emb = new Int8Array(emb.buffer, emb.byteOffset, N * D);
@@ -321,23 +323,26 @@ export class Engine {
   geo(cx, cy) { return pxToLonLat(cx + this.info.px0, cy + this.info.py0, this.info.zoom); }
 
   // ---------------------------------------------------------------- depth
+  // One depth model per page, shared by every planet's engine.
   loadDepth(onProgress = () => {}) {
-    if (this.depthReady) return this.depthReady;
-    this.depthReady = (async () => {
-      const T = this.T = await import(TRANSFORMERS);
-      T.env.allowLocalModels = false;
-      const seen = new Map();
-      this.depth = await T.pipeline("depth-estimation", DEPTH_MODEL, {
-        dtype: "q8", device: "wasm",
-        progress_callback: (p) => {
-          if (p.status !== "progress" || !p.total) return;
-          const prev = seen.get(p.file) || 0; seen.set(p.file, p.loaded);
-          onProgress("depth", p.loaded - prev, p.total, p.file);
-        },
-      });
-    })();
-    this.depthReady.catch(() => { this.depthReady = null; });
-    return this.depthReady;
+    if (!DEPTH.ready) {
+      DEPTH.ready = (async () => {
+        DEPTH.T = await import(TRANSFORMERS);
+        DEPTH.T.env.allowLocalModels = false;
+        const seen = new Map();
+        DEPTH.pipe = await DEPTH.T.pipeline("depth-estimation", DEPTH_MODEL, {
+          dtype: "q8", device: "wasm",
+          progress_callback: (p) => {
+            if (p.status !== "progress" || !p.total) return;
+            const prev = seen.get(p.file) || 0; seen.set(p.file, p.loaded);
+            DEPTH.listeners.forEach((f) => f("depth", p.loaded - prev, p.total, p.file));
+          },
+        });
+      })();
+      DEPTH.ready.catch(() => { DEPTH.ready = null; });
+    }
+    DEPTH.listeners.add(onProgress);
+    return DEPTH.ready.then(() => { this.T = DEPTH.T; this.depth = DEPTH.pipe; }).finally(() => DEPTH.listeners.delete(onProgress));
   }
 
   // photo (square canvas) -> 128x128 height map in 0..1
@@ -471,7 +476,7 @@ export class Engine {
 
   result(x, y, w, f, s) {
     const cx = x + w / 2, cy = y + w / 2, [lon, lat] = this.geo(cx, cy);
-    const km = w * metersPerPx(lat, this.info.zoom) / 1000, a = s.angle * Math.PI / 180, corners = [];
+    const km = w * metersPerPx(lat, this.info.zoom, this.info.circ) / 1000, a = s.angle * Math.PI / 180, corners = [];
     for (const [dx, dy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
       let ox = dx * w / 2, oy = dy * w / 2; if (s.flipped) ox = -ox;
       const rx = ox * Math.cos(a) + oy * Math.sin(a), ry = -ox * Math.sin(a) + oy * Math.cos(a);
@@ -479,7 +484,7 @@ export class Engine {
     }
     return { lon, lat, x, y, w, level: f, size_km: km, score: s.score, ncc: s.ncc, desc_sim: s.desc,
              rotation_deg: s.angle, flipped: s.flipped, top_edge_bearing_deg: (360 - s.angle) % 360,
-             matcher: "learned", corners_lonlat: corners };
+             matcher: "learned", body: this.info.body || "earth", corners_lonlat: corners };
   }
 }
 

@@ -36,8 +36,9 @@ def px_to_lonlat(x, y, z):
     return lon, lat
 
 
-def meters_per_px(lat, z):
-    return EARTH_CIRC * math.cos(math.radians(lat)) / (TILE * 2 ** z)
+def meters_per_px(lat, z, circ=EARTH_CIRC):
+    """Ground size of one Web Mercator pixel; pass the planet's circumference for Mars or the Moon."""
+    return circ * math.cos(math.radians(lat)) / (TILE * 2 ** z)
 
 
 def _fetch(url, path, tries=4):

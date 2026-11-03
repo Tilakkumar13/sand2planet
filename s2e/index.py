@@ -64,7 +64,8 @@ def iter_windows(header, levels=(1, 2, 4), stride=16, min_land=0.7, min_relief=4
             sm = cv2.GaussianBlur(small, (0, 0), BLUR_SIGMA, borderType=cv2.BORDER_REFLECT)
             wr = sliding_window_view(small, (PATCH, PATCH))[0, ::stride]
             ws = sliding_window_view(sm, (PATCH, PATCH))[0, ::stride]
-            land = (wr > 0).mean((1, 2))
+            # on Earth, skip windows that are mostly sea; other planets have no sea level
+            land = (wr > 0).mean((1, 2)) if header.get("body", "earth") == "earth" else np.ones(len(wr))
             relief = wr.std((1, 2))
             keep = np.nonzero((land >= min_land) & (relief >= min_relief))[0]
             if len(keep):
@@ -134,6 +135,15 @@ class Index:
         self.matcher = "learned" if self.emb is not None else "handcrafted"
 
     # ------------------------------------------------------------ geometry
+    @property
+    def body(self):
+        return self.h.get("body", "earth")
+
+    def mpp(self, lat):
+        """metres per mosaic pixel at this latitude, on this planet"""
+        from .tiles import EARTH_CIRC
+        return meters_per_px(lat, self.h["zoom"], self.h.get("circumference", EARTH_CIRC))
+
     def raw_patch(self, x, y, w, pad=0):
         H, W = self.mosaic.shape
         y0, y1 = max(y - pad, 0), min(y + w + pad, H)
@@ -282,7 +292,7 @@ class Index:
     def _result(self, x, y, w, f, score, ncc, sim, angle, flipped):
         cx, cy = x + w / 2, y + w / 2
         lon, lat = self.geo(cx, cy)
-        km = w * meters_per_px(lat, self.h["zoom"]) / 1000.0
+        km = w * self.mpp(lat) / 1000.0
         a = math.radians(angle)
         corners = []
         for dx, dy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:

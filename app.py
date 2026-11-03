@@ -57,7 +57,7 @@ os.makedirs(OUT, exist_ok=True)
 MAX_UPLOAD = 25 * 1024 * 1024
 from s2e.tiles import meters_per_px
 from s2e.terrain import PATCH
-_sizes = [PATCH * f * meters_per_px(0, IDX.h["zoom"]) / 1000 for f in sorted(IDX.levels)]
+_sizes = [PATCH * f * IDX.mpp(0) / 1000 for f in sorted(IDX.levels)]
 PAGE = render_page(len(IDX.meta), _sizes, IDX.matcher, hero=hero_data(IDX), public=a.public)
 
 if a.public and a.depth == "dav2":  # load the depth model now, not on the first visitor's request

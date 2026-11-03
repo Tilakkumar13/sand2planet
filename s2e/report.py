@@ -293,8 +293,9 @@ async function imagery(template) {
 const T = {};
 async function prepare() {
   [T.sRelief, T.rRelief, T.sPhoto] = await Promise.all([tex(D.sculptRelief), tex(D.realRelief), D.photo ? tex(D.photo) : null]);
-  if (!D.synthetic) {
-    for (const url of [D.s2, D.esri]) { try { T.rSat = await imagery(url); break; } catch (e) { } }
+  if (D.sat) T.rSat = await tex(D.sat);                    // imagery prepared by the page (e.g. Mars)
+  else if (!D.synthetic) {
+    for (const url of [D.s2, D.esri]) { if (!url) continue; try { T.rSat = await imagery(url); break; } catch (e) { } }
   }
 }
 function setSurface(kind) {

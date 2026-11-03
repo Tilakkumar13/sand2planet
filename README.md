@@ -139,6 +139,15 @@ changes brought that to 69 %: training on sandboxes shifted and resized against 
 These tests start from a height map. Reading depth from a photo of real sand is not part of them yet, and is the
 next thing to measure.
 
+## Mars
+
+`build_planet.py` downloads the MGS MOLA elevation map of Mars (32 pixels per degree), re-projects it to Web
+Mercator and builds a 102,915-window index, plus the IAU place names. The public site has an Earth / Mars switch;
+Mars results are named from the IAU Gazetteer and mapped on NASA Mars Trek tiles.
+
+The matcher was trained on Earth only. On Mars it finds the right place first in 82 % of lined-up and 51 % of
+realistically placed tests, against 93 % and 69 % on Earth. A matcher trained on Mars terrain is the next step.
+
 ## The results page
 
 - The best match is named after the real region (through OpenStreetMap Nominatim), with its size, shape agreement and the direction your sandbox faces.

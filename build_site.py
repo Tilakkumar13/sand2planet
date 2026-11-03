@@ -29,10 +29,11 @@ p.add_argument("--examples", nargs="*", default=[], help="output/<time> folders 
 p.add_argument("--out", default="docs")
 p.add_argument("--no-pack", action="store_true", help="don't re-export docs/engine (index unchanged)")
 p.add_argument("--static-only", action="store_true", help="no in-browser search")
+p.add_argument("--mars", default=None, help="Mars index from build_planet.py (e.g. data/mars_z5): adds an Earth/Mars switch")
 a = p.parse_args()
 
 idx = Index(a.index)
-sizes = [PATCH * f * meters_per_px(0, idx.h["zoom"]) / 1000 for f in sorted(idx.levels)]
+sizes = [PATCH * f * idx.mpp(0) / 1000 for f in sorted(idx.levels)]
 os.makedirs(a.out, exist_ok=True)
 
 examples = []
@@ -66,9 +67,15 @@ if browser:
     from s2e.webpack import export_pack, export_web
     if not a.no_pack or not os.path.exists(os.path.join(a.out, "engine", "index.json")):
         export_pack(idx, a.out)
+    if a.mars and not a.no_pack:
+        midx = Index(a.mars)
+        same = os.path.basename(json.load(open(a.mars + "_emb.json"))["model"]) == os.path.basename(json.load(open(a.index + "_emb.json"))["model"]) \
+            if os.path.exists(a.mars + "_emb.json") and os.path.exists(a.index + "_emb.json") else False
+        export_pack(midx, a.out, sub=os.path.join("mars", "engine"), shared_matcher="../../engine/matcher.onnx" if same else None)
     export_web(a.out)
 page = render_page(len(idx.meta), sizes, idx.matcher, hero=hero_data(idx), static=True, examples=examples,
-                   engine="./engine/" if browser else None)
+                   engine="./engine/" if browser else None,
+                   mars="./mars/engine/" if browser and a.mars else None)
 with open(os.path.join(a.out, "index.html"), "w") as f:
     f.write(page)
 open(os.path.join(a.out, ".nojekyll"), "w").close()   # serve files as they are
