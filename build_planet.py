@@ -46,7 +46,7 @@ def download(url, path):
     if os.path.exists(path) or a.skip_download:
         return path
     print(f"[mars] downloading {url.rsplit('/', 1)[-1]} ...")
-    req = urllib.request.Request(url, headers={"User-Agent": "sand2earth/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "sand2planet/1.0"})
     with urllib.request.urlopen(req, timeout=120) as r, open(path + ".part", "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         got = 0

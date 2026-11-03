@@ -327,7 +327,7 @@ document.getElementById("loading3d").remove();
 TEMPLATE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your match · Sand to Earth</title>
+<title>Your match · Sand to Planet</title>
 <meta name="theme-color" content="#000000">
 %%FONTS%%
 %%IMPORTMAP%%
@@ -412,9 +412,9 @@ body { background: #000; }
 }
 </style></head>
 <body>
-<nav class="gnav" aria-label="Sand to Earth">
+<nav class="gnav" aria-label="Sand to Planet">
   <div class="in">
-    <a class="brand" href="/" id="home">%%MARK%%Sand to Earth</a>
+    <a class="brand" href="/" id="home">%%MARK%%Sand to Planet</a>
     <div class="links"><a class="pill small" href="/#try" id="again-nav">Try another photo</a></div>
   </div>
 </nav>
@@ -481,7 +481,7 @@ if (!synthetic) (async () => {
       if (name) {
         document.querySelectorAll(`[data-geo="${i}"]`).forEach(el => { el.textContent = name; });
         document.querySelectorAll(`[data-coord="${i}"]`).forEach(el => el.hidden = false);
-        if (i === 0) document.title = name + " · Sand to Earth";
+        if (i === 0) document.title = name + " · Sand to Planet";
       }
     } catch (e) { /* keep the coordinates */ }
     await new Promise(res => setTimeout(res, 1100));

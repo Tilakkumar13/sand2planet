@@ -51,7 +51,7 @@ for k, src in enumerate(a.examples, 1):
     html = open(rep).read()
     # links that pointed at the local app now point at the showcase home page
     html = (html.replace('href="/#try"', 'href="../../index.html#try"').replace('href="/"', 'href="../../index.html"')
-                .replace("Try another photo", "Back to Sand to Earth").replace("Sculpt another one.", "Make your own."))
+                .replace("Try another photo", "Back to Sand to Planet").replace("Sculpt another one.", "Make your own."))
     open(rep, "w").write(html)
     res = json.load(open(os.path.join(dst, "result.json")))["results"][0]
     lat, lon = res["lat"], res["lon"]

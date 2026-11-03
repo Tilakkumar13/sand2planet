@@ -8,14 +8,14 @@ from .style import FONTS, BASE_CSS, MARK_SVG, IMPORTMAP, REVEAL_JS
 _PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sand to Earth</title>
-<meta name="description" content="Shape a landscape with your hands, take one photo, and find where it already exists on Earth.">
+<title>Sand to Planet · Earth</title>
+<meta name="description" content="Shape a landscape with your hands, take one photo, and find where it exists on Earth or Mars.">
 <meta name="theme-color" content="#000000">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Sand to Earth">
-<meta property="og:description" content="Shape a landscape with your hands, take one photo, and find where it already exists on Earth.">
-<meta property="og:image" content="https://tilakkumar13.github.io/sand2earth/og.png">
-<meta property="og:url" content="https://tilakkumar13.github.io/sand2earth/">
+<meta property="og:title" content="Sand to Planet">
+<meta property="og:description" content="Shape a landscape with your hands, take one photo, and find where it exists on Earth or Mars.">
+<meta property="og:image" content="https://tilakkumar13.github.io/sand2planet/og.png">
+<meta property="og:url" content="https://tilakkumar13.github.io/sand2planet/">
 <meta name="twitter:card" content="summary_large_image">
 %%FONTS%%
 <style>
@@ -161,9 +161,9 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 }
 </style></head>
 <body>
-<nav class="gnav" aria-label="Sand to Earth">
+<nav class="gnav" aria-label="Sand to Planet">
   <div class="in">
-    <a class="brand" href="#top">%%MARK%%Sand to Earth</a>
+    <a class="brand" href="#top">%%MARK%%Sand to Planet</a>
     <div class="links">
       <a href="#how">How it works</a><a href="#numbers">Accuracy</a><a href="#about">About</a>
       %%OTHERPLANET%%<a class="pill small" href="#try">Try it</a>
@@ -353,7 +353,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
   <p>Elevation: AWS Terrain Tiles (Mapzen / Tilezen). Imagery: Sentinel-2 cloudless 2016 by EOX IT Services GmbH, contains modified
     Copernicus Sentinel data, CC BY 4.0. Depth: Depth Anything V2. 3D: three.js.</p>
   <div class="rule"></div>
-  <p>Sand to Earth, 2026. <a href="https://github.com/Tilakkumar13/sand2earth">Open source on GitHub</a>. Made by <a href="https://tilakkumar13.github.io/">Tilak Kumar</a>.</p>
+  <p>Sand to Planet, 2026. <a href="https://github.com/Tilakkumar13/sand2planet">Open source on GitHub</a>. Made by <a href="https://tilakkumar13.github.io/">Tilak Kumar</a>.</p>
 </div></footer>
 
 <script type="application/json" id="herodata">%%HERODATA%%</script>
@@ -807,12 +807,10 @@ MARS_CSS = """
 
 # Sand to Mars: the same page, with Mars words, data and colours.
 MARS_TEXT = [
-    ("<title>Sand to Earth</title>", "<title>Sand to Mars</title>"),
-    ('content="Sand to Earth"', 'content="Sand to Mars"'),
-    ("find where it already exists on Earth.", "find where it exists on Mars."),
-    ("https://tilakkumar13.github.io/sand2earth/\">", "https://tilakkumar13.github.io/sand2earth/mars/\">"),
-    ('aria-label="Sand to Earth"', 'aria-label="Sand to Mars"'),
-    ('%%MARK%%Sand to Earth</a>', '%%MARK%%Sand to Mars</a>'),
+    ("<title>Sand to Planet · Earth</title>", "<title>Sand to Planet · Mars</title>"),
+    ('content="Sand to Planet"', 'content="Sand to Planet · Mars"'),
+    ("find where it exists on Earth or Mars.", "find where it exists on Mars."),
+    ("https://tilakkumar13.github.io/sand2planet/\">", "https://tilakkumar13.github.io/sand2planet/mars/\">"),
     ('<h1 class="grad">Sand to Earth.</h1>', '<h1 class="grad">Sand to Mars.</h1>'),
     ("Shape a landscape with your hands. Find where it already exists.", "Shape a landscape with your hands. Find where it exists on Mars."),
     ('<p class="beat">Find it on Earth.', '<p class="beat">Find it on Mars.'),
@@ -834,7 +832,6 @@ MARS_TEXT = [
      '<p>Elevation from the <a href="https://pds-geosciences.wustl.edu/missions/mgs/megdr.html">MGS MOLA laser altimeter</a>\n'
      '          (NASA, 1.85 km grid). Imagery from Viking and MOLA via <a href="https://trek.nasa.gov/mars/">NASA Mars Trek</a>.\n'
      '          Place names from the <a href="https://planetarynames.wr.usgs.gov/">IAU Gazetteer of Planetary Nomenclature</a>.</p>'),
-    ("<p>Sand to Earth, 2026.", "<p>Sand to Mars, part of Sand to Earth, 2026."),
     ('<meta name="theme-color" content="#000000">', '<meta name="theme-color" content="#1a0a05">'),
 ]
 
@@ -860,7 +857,7 @@ html.has-report, html.has-report body { overflow: hidden; }
 
 RUN_LOCAL = ('<p class="runlocal reveal">The first search downloads about 70 MB (the depth model and a compact copy of '
              'the planet\'s terrain); after that it is cached. Prefer Python? '
-             '<a href="https://github.com/Tilakkumar13/sand2earth#quick-start-macos-apple-silicon">Run it from the command line</a>.</p>')
+             '<a href="https://github.com/Tilakkumar13/sand2planet#quick-start-macos-apple-silicon">Run it from the command line</a>.</p>')
 
 
 def _static_try(examples):
@@ -880,13 +877,13 @@ def _static_try(examples):
     <div class="card run reveal">
       <h3>Run it yourself.</h3>
       <p>About five minutes on a Mac with Python 3.10 or newer.</p>
-      <pre>git clone https://github.com/Tilakkumar13/sand2earth
-cd sand2earth
+      <pre>git clone https://github.com/Tilakkumar13/sand2planet
+cd sand2planet
 python3 -m venv .venv &amp;&amp; source .venv/bin/activate
 pip install -r requirements.txt
 python build_index.py --zoom 6 --name world_z6
 python app.py --index data/world_z6</pre>
-      <div class="gh"><a class="pill" href="https://github.com/Tilakkumar13/sand2earth">View on GitHub</a></div>
+      <div class="gh"><a class="pill" href="https://github.com/Tilakkumar13/sand2planet">View on GitHub</a></div>
     </div>
   </div>
 </section>"""

@@ -1,4 +1,4 @@
-// Sand to Earth search engine for the browser.
+// Sand to Planet search engine for the browser.
 // A line-by-line port of s2e/depth.py, s2e/terrain.py and Index.search in s2e/index.py,
 // running on the files written by s2e/webpack.py. Nothing is uploaded: the photo, the depth
 // model and the search all stay in this browser tab.

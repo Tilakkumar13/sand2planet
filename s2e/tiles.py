@@ -46,7 +46,7 @@ def _fetch(url, path, tries=4):
         return path
     for t in range(tries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "sand2earth/0.1"})
+            req = urllib.request.Request(url, headers={"User-Agent": "sand2planet/0.1"})
             with urllib.request.urlopen(req, timeout=30) as r:
                 data = r.read()
             tmp = path + ".part"

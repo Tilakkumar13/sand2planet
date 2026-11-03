@@ -37,7 +37,7 @@ p.add_argument("--index", required=True)
 p.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)))
 p.add_argument("--lan", action="store_true", help="listen on the local network (phone access)")
 p.add_argument("--public", action="store_true", help="run as a public server (CORS, auto-delete, no browser)")
-p.add_argument("--home", default=os.environ.get("S2E_HOME", "https://tilakkumar13.github.io/sand2earth/"),
+p.add_argument("--home", default=os.environ.get("S2E_HOME", "https://tilakkumar13.github.io/sand2planet/"),
                help="with --public: where 'Try another photo' leads")
 p.add_argument("--keep-minutes", type=float, default=30, help="with --public: delete results after this long")
 p.add_argument("--depth", choices=["dav2", "shading"], default="dav2")
@@ -170,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 EXPIRED = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sand to Earth</title><body style="font:17px/1.5 -apple-system,system-ui,sans-serif;max-width:520px;margin:18vh auto;padding:0 24px;color:#1d1d1f">
+<title>Sand to Planet</title><body style="font:17px/1.5 -apple-system,system-ui,sans-serif;max-width:520px;margin:18vh auto;padding:0 24px;color:#1d1d1f">
 <h1 style="font-size:32px;margin:0 0 8px">This result has expired.</h1>
 <p style="color:#6e6e73">Photos and results are deleted after {a.keep_minutes:.0f} minutes. Run a new search to see it again.</p>
 <p><a href="{a.home}#try" style="color:#0066cc">Try another photo</a></p></body>"""

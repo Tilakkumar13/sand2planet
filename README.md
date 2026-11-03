@@ -1,7 +1,7 @@
-# Sand → Earth
+# Sand to Planet
 
 Shape a landscape out of sand or clay, take one photo of it from above, and find the place
-on Earth whose real terrain matches it. Results show the match on Sentinel-2 imagery, with
+on Earth, or on Mars, whose real terrain matches it. Results show the match on Sentinel-2 imagery, with
 your sandbox outline and orientation drawn on the real place, and both surfaces side by side
 in 3D.
 
@@ -32,7 +32,7 @@ to open it from your phone on the same Wi-Fi and use the phone camera.
 
 ## The public site searches in your browser
 
-[tilakkumar13.github.io/sand2earth](https://tilakkumar13.github.io/sand2earth/) runs the whole pipeline on
+[tilakkumar13.github.io/sand2planet](https://tilakkumar13.github.io/sand2planet/) runs the whole pipeline on
 the visitor's device, so photos are never uploaded and there is no server to pay for or wake up:
 
 - **Depth:** Depth Anything V2 Small through [transformers.js](https://huggingface.co/docs/transformers.js) (8-bit, about 27 MB).
@@ -216,4 +216,4 @@ Place names: OpenStreetMap contributors via Nominatim. 3D: three.js.
 
 Built by [Tilak Kumar](https://tilakkumar13.github.io/), MSc Geospatial Technologies, Institute for Geoinformatics, University of Münster.
 
-**Live site:** https://tilakkumar13.github.io/sand2earth/
+**Live site:** https://tilakkumar13.github.io/sand2planet/ (Earth) and https://tilakkumar13.github.io/sand2planet/mars/ (Mars)
