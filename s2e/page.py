@@ -177,13 +177,14 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     <div class="glow"></div>
     <div class="copy">
       <div class="layer" data-in="0" data-out=".16">
+        %%PSWITCH%%
         <h1 class="grad">Sand to Earth.</h1>
         <p class="sub">Shape a landscape with your hands. Find where it already exists.</p>
         <div class="cta"><a class="pill" href="#try">Try it with a photo</a><a class="pill ghost" href="#how">How it works</a></div>
       </div>
       <div class="layer" data-in=".2" data-out=".42"><p class="beat">Sculpt it.<small>Press ridges, valleys and peaks into sand or clay.</small></p></div>
       <div class="layer" data-in=".46" data-out=".66"><p class="beat">Photograph it.<small>One photo from above becomes a height map, right on your Mac.</small></p></div>
-      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Earth.<small>%%HEROCAP%%</small></p></div>
+      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Earth.<small>%%HEROCAP%%</small></p>%%OTHERCTA%%</div>
     </div>
     <div class="cue" aria-hidden="true">Scroll</div>
     <div class="legend" aria-hidden="true">Sand <i><b id="mixbar"></b></i> Earth</div>
@@ -762,6 +763,18 @@ STATIC_CSS = """
 
 PLANET_CSS = """
 .gnav .otherp { color: #ff9b6b; }
+.hero .pswitch { display: inline-flex; gap: 4px; margin: 0 0 22px; padding: 4px; border-radius: 999px; pointer-events: auto;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.hero .pswitch a { padding: 7px 20px; border-radius: 999px; font-size: 15px; font-weight: 600; color: rgba(255,255,255,.72) !important; text-decoration: none; }
+.hero .pswitch a:hover { color: #fff; text-decoration: none; }
+.hero .pswitch a.on { background: #fff; color: #000 !important; }
+.hero .pswitch a.on.m { background: #c1440e; color: #fff !important; }
+.hero .pswitch a.m:not(.on):hover { color: #ff9b6b !important; }
+.hero .othercta { display: inline-block; margin-top: 30px; padding: 12px 22px; border-radius: 999px; pointer-events: auto; font-size: 16px;
+  color: rgba(255,255,255,.85) !important; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16); text-decoration: none; }
+.hero .othercta span { color: #8fd0ff; font-weight: 600; margin-left: 6px; }
+.hero .othercta.m span { color: #ff9b6b; }
+.hero .othercta:hover { text-decoration: none; background: rgba(255,255,255,.12); }
 .gnav .otherp.earth { color: #8fd0ff; }
 .marsteaser { padding: 140px 0; text-align: center; background: radial-gradient(70% 80% at 50% 100%, #8c2a17 0%, #2a0f08 55%, #000 100%); }
 .marsteaser .kick { color: #ff9b6b; font-weight: 600; font-size: 17px; margin: 0 0 8px; }
@@ -927,6 +940,14 @@ def render_page(count, sizes_km=(156, 313, 626), matcher="handcrafted", results=
     page = page.replace("%%OTHERPLANET%%", ('<a class="otherp" href="mars/">Sand to Mars</a>' if mars else "") if planet == "earth"
                         else '<a class="otherp earth" href="../">Sand to Earth</a>')
     page = page.replace("%%MARSTEASER%%", MARS_TEASER if (planet == "earth" and mars) else "")
+    two = bool(mars) or planet == "mars"
+    page = page.replace("%%PSWITCH%%", (
+        '<nav class="pswitch" aria-label="Planet">'
+        + ('<a class="on" aria-current="page">Earth</a><a class="m" href="mars/">Mars</a>' if planet == "earth"
+           else '<a href="../">Earth</a><a class="on m" aria-current="page">Mars</a>') + '</nav>') if two else "")
+    page = page.replace("%%OTHERCTA%%", ('<a class="othercta m" href="mars/">Want to see it on Mars? <span>Try Sand to Mars</span></a>'
+                                         if planet == "earth" else
+                                         '<a class="othercta" href="../">Back on Earth? <span>Try Sand to Earth</span></a>') if two else "")
     if planet == "mars":
         for x, y in MARS_TEXT:
             page = page.replace(x, y)

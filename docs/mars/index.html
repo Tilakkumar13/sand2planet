@@ -264,6 +264,18 @@ html.has-report, html.has-report body { overflow: hidden; }
 .runlocal { text-align: center; color: var(--ink-2); font-size: 14px; margin: 18px 0 0; }
 
 .gnav .otherp { color: #ff9b6b; }
+.hero .pswitch { display: inline-flex; gap: 4px; margin: 0 0 22px; padding: 4px; border-radius: 999px; pointer-events: auto;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.hero .pswitch a { padding: 7px 20px; border-radius: 999px; font-size: 15px; font-weight: 600; color: rgba(255,255,255,.72) !important; text-decoration: none; }
+.hero .pswitch a:hover { color: #fff; text-decoration: none; }
+.hero .pswitch a.on { background: #fff; color: #000 !important; }
+.hero .pswitch a.on.m { background: #c1440e; color: #fff !important; }
+.hero .pswitch a.m:not(.on):hover { color: #ff9b6b !important; }
+.hero .othercta { display: inline-block; margin-top: 30px; padding: 12px 22px; border-radius: 999px; pointer-events: auto; font-size: 16px;
+  color: rgba(255,255,255,.85) !important; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16); text-decoration: none; }
+.hero .othercta span { color: #8fd0ff; font-weight: 600; margin-left: 6px; }
+.hero .othercta.m span { color: #ff9b6b; }
+.hero .othercta:hover { text-decoration: none; background: rgba(255,255,255,.12); }
 .gnav .otherp.earth { color: #8fd0ff; }
 .marsteaser { padding: 140px 0; text-align: center; background: radial-gradient(70% 80% at 50% 100%, #8c2a17 0%, #2a0f08 55%, #000 100%); }
 .marsteaser .kick { color: #ff9b6b; font-weight: 600; font-size: 17px; margin: 0 0 8px; }
@@ -297,13 +309,14 @@ html.has-report, html.has-report body { overflow: hidden; }
     <div class="glow"></div>
     <div class="copy">
       <div class="layer" data-in="0" data-out=".16">
+        <nav class="pswitch" aria-label="Planet"><a href="../">Earth</a><a class="on m" aria-current="page">Mars</a></nav>
         <h1 class="grad">Sand to Mars.</h1>
         <p class="sub">Shape a landscape with your hands. Find where it exists on Mars.</p>
         <div class="cta"><a class="pill" href="#try">Try it with a photo</a><a class="pill ghost" href="#how">How it works</a></div>
       </div>
       <div class="layer" data-in=".2" data-out=".42"><p class="beat">Sculpt it.<small>Press ridges, valleys and peaks into sand or clay.</small></p></div>
       <div class="layer" data-in=".46" data-out=".66"><p class="beat">Photograph it.<small>One photo from above becomes a height map, right in your browser.</small></p></div>
-      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Mars.<small>These mountains are real: Olympus Mons on Mars, the tallest volcano known, 900 km across. The sand above was the same place, smoothed like a hand-made copy.</small></p></div>
+      <div class="layer" data-in=".7" data-out="1.1"><p class="beat">Find it on Mars.<small>These mountains are real: Olympus Mons on Mars, the tallest volcano known, 900 km across. The sand above was the same place, smoothed like a hand-made copy.</small></p><a class="othercta" href="../">Back on Earth? <span>Try Sand to Earth</span></a></div>
     </div>
     <div class="cue" aria-hidden="true">Scroll</div>
     <div class="legend" aria-hidden="true">Sand <i><b id="mixbar"></b></i> Mars</div>
