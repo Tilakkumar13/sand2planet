@@ -205,6 +205,32 @@ function rot90(z, k) {                         // numpy/torch rot90 (counter-clo
   return a;
 }
 
+// Quick look at the photo itself for things that make any match meaningless.
+export function photoChecks(canvas) {
+  const S = 256, c = document.createElement("canvas"); c.width = c.height = S;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(canvas, 0, 0, S, S);
+  const d = g.getImageData(0, 0, S, S).data, gray = new Float32Array(S * S), soft = new Uint8Array(S * S);
+  let clear = 0, m = 0, q = 0;
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    if (d[i + 3] < 250) clear++;
+    const v = (d[i] + d[i + 1] + d[i + 2]) / 3; gray[j] = v; m += v; q += v * v;
+    soft[j] = v > 150 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 14 ? 1 : 0;
+  }
+  m /= S * S;
+  // A "transparent" checkerboard printed into the picture: grey squares that repeat every 2p pixels.
+  let checker = 0;
+  for (let p = 3; p <= 20; p++) {
+    let hit = 0;
+    for (let y = 0; y + p < S; y += 2) for (let x = 0; x + 2 * p < S; x += 2) {
+      const i = y * S + x; if (!soft[i]) continue;
+      const a = gray[i], b = gray[i + p], c2 = gray[i + 2 * p], e = gray[i + p * S + p];
+      if (Math.abs(a - b) > 6 && Math.abs(a - b) < 70 && Math.abs(a - c2) < 3 && Math.abs(a - e) < 3) hit++;
+    }
+    checker = Math.max(checker, hit / ((S / 2) * (S / 2)));
+  }
+  return { transparent: clear / (S * S), checker, contrast: Math.sqrt(Math.max(q / (S * S) - m * m, 0)) };
+}
+
 // depth.to_heightmap
 function percentile(sorted, q) {
   const pos = q / 100 * (sorted.length - 1), lo = Math.floor(pos), f = pos - lo;
@@ -223,9 +249,19 @@ export function toHeightmap(depth, w, h, invert = false, size = 128) {
   const [c0, c1, c2] = solve3([[n, sx, sy], [sx, sxx, sxy], [sy, sxy, syy]], [sz, sxz, syz]);
   const f = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) f[y * w + x] = d[y * w + x] - (c0 + c1 * (x / w - 0.5) + c2 * (y / h - 0.5));
+  // How much of the depth is just one big slope (a photo taken at an angle, or from the side)?
+  const mean = sz / n; let tot = 0, res = 0;
+  for (let i = 0; i < d.length; i++) { tot += (d[i] - mean) ** 2; res += f[i] ** 2; }
   const r = resizeArea(f, w, h, size, size);
   let mn = Infinity, mx = -Infinity; for (const v of r) { if (v < mn) mn = v; if (v > mx) mx = v; }
   for (let i = 0; i < r.length; i++) r[i] = (r[i] - mn) / (mx - mn + 1e-9);
+  // ...and how much of the picture is flat, with nothing to match (a blank background, sky, an empty table)?
+  let flat = 0, all = 0, sd = 0; { let m = 0; for (const v of r) m += v; m /= r.length; for (const v of r) sd += (v - m) ** 2; sd = Math.sqrt(sd / r.length); }
+  for (let by = 0; by < size; by += 16) for (let bx = 0; bx < size; bx += 16) {
+    let m = 0, q = 0; for (let y = by; y < by + 16; y++) for (let x = bx; x < bx + 16; x++) { const v = r[y * size + x]; m += v; q += v * v; }
+    m /= 256; all++; if (Math.sqrt(Math.max(q / 256 - m * m, 0)) < 0.04 * sd) flat++;
+  }
+  r.stats = { tilt: tot > 0 ? 1 - res / tot : 0, flat: flat / all };
   return r;
 }
 function solve3(A, b) {
@@ -537,7 +573,9 @@ export function resizeCubic(src, n, m) {
 }
 
 export function renderToCanvas(h, n, size) {
-  const r = resizeCubic(h, n, size);
+  let r = resizeCubic(h, n, size);
+  // Upscaled a lot, bicubic leaves a faint grid in the shading: smooth it away first.
+  if (size / n >= 3) r = gaussBlur(r, size, size, gaussKernel(0.5 * size / n));
   let mn = Infinity, mx = -Infinity; for (const v of r) { if (v < mn) mn = v; if (v > mx) mx = v; }
   const zf = 0.35 * size / ((mx - mn) || 1), hz = r.map((v) => v * zf);
   const gy = grad(hz, size, size, 0), gx = grad(hz, size, size, 1);

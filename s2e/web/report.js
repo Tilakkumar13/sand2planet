@@ -137,7 +137,19 @@ function sceneData(engine, q, r, photo) {
   };
 }
 
-export async function buildReport(engine, parts, { query, results, photo, home }) {
+// Plain-language reasons the photo can't give a meaningful match (thresholds checked on test images).
+export function photoWarnings(c) {
+  if (!c) return [];
+  const w = [];
+  if (c.transparent > 0.05) w.push("Part of the image is transparent, which reads as a flat black floor.");
+  if (c.checker > 0.05) w.push("It has a checkerboard background, the kind stock images use to show transparency, which reads as a flat floor with a grid on it.");
+  if (c.contrast < 6) w.push("It is almost one flat colour, so there is no shape to read.");
+  if (c.tilt > 0.8) w.push("Most of its depth is one big slope, as in a photo taken from the side or at a low angle.");
+  if (c.flat > 0.45) w.push("A large part of it is flat and empty, like sky or a plain background.");
+  return w;
+}
+
+export async function buildReport(engine, parts, { query, results, photo, home, checks = null }) {
   const mars = engine.info.body === "mars";
   engine.parts = parts;
   const qz = zscore(query);
@@ -148,23 +160,30 @@ export async function buildReport(engine, parts, { query, results, photo, home }
              mine: render(aligned, 64, size), real: render(real, 64, size) };
   });
   const best = rows[0], others = rows.slice(1);
+  const warn = photoWarnings(checks);
   let hero = "", trio = "";
   if (best) {
     const a = best.agree, mirror = best.flipped ? " The match uses the mirror image of your photo." : "";
-    const [eyebrow, strength] = mars
-      ? (a >= 70 ? ["Your landscape exists on Mars", "a strong match"] : a >= 45 ? ["Your landscape looks most like this place on Mars", "a fair match"]
-                 : ["The closest place on Mars, but a loose fit", "a loose match"])
-      : (a >= 70 ? ["Your landscape exists in", "a strong match"] : a >= 45 ? ["Your landscape looks most like", "a fair match"]
-                 : ["The closest place, but a loose fit, is", "a loose match"]);
+    // Tested on shapes that exist nowhere (random blobs, side-on silhouettes): they reach 85-95 % too.
+    // So the number says how alike the shapes are, never that this is the place you made.
+    const where = mars ? "on Mars" : "on Earth";
+    const eyebrow = warn.length ? `Closest shape ${where}, but see the note below`
+                  : a >= 70 ? `The most similar terrain ${where}` : `The closest terrain ${where}, a loose fit`;
+    const fit = a >= 70 ? "a close fit" : a >= 45 ? "a rough fit" : "a loose fit";
+    const note = warn.length ? `
+      <div class="warnbox reveal"><p><strong>This photo probably isn't a top-down shot of sand.</strong> ${warn.join(" ")}
+        So this place is just the nearest shape out of ${engine.info.count.toLocaleString("en")} and doesn't mean much.
+        For a real result, shape sand in a tray and photograph it from straight above, in side light.</p></div>` : "";
     hero = `
   <section class="rhero dark">
     <div class="wrap">
       <p class="eyebrow reveal">${eyebrow}</p>
       <h1 class="place grad reveal" data-geo="0">${best.coord}</h1>
       <p class="coords num reveal" data-coord="0" hidden>${best.coord}</p>
-      <p class="lede reveal">A stretch of terrain about <span class="w num">${best.km} km</span> across, ${strength}
-        for your sculpture's shape (<span class="w num">${best.agree}%</span> agreement). On the map, the top edge of your sandbox
+      <p class="lede reveal">A stretch of terrain about <span class="w num">${best.km} km</span> across, ${fit}
+        for your sculpture's shape (<span class="w num">${best.agree}%</span> shape similarity). On the map, the top edge of your sandbox
         faces <span class="w">${best.facing}</span>.${mirror}</p>
+      <p class="caveat reveal">Similar shapes turn up all over a planet, so treat this as a look-alike, not proof it's the place you made.</p>${note}
       <div class="links reveal">${best.links}</div>
     </div>
   </section>`;
@@ -188,7 +207,7 @@ export async function buildReport(engine, parts, { query, results, photo, home }
         <p class="rank num">No. ${o.i}</p>
         <h3 data-geo="${o.i - 1}">${o.coord}</h3>
         <p class="sub num" data-coord="${o.i - 1}" hidden>${o.coord}</p>
-        <p class="facts num">${o.km} km across, ${o.agree}% shape match</p>
+        <p class="facts num">${o.km} km across, ${o.agree}% shape similarity</p>
         <div class="links">${o.links}</div>
       </li>`).join("");
   const scene = results.length ? sceneData(engine, query, results[0], photo) : null;

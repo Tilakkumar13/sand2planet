@@ -80,12 +80,9 @@ def write_outputs(out_dir, index, query, results, photo=None):
     if best:
         mirror = " The match uses the mirror image of your photo." if best["flipped"] else ""
         a = best["agree"]
-        if a >= 70:
-            eyebrow, strength = "Your landscape exists in", "a strong match"
-        elif a >= 45:
-            eyebrow, strength = "Your landscape looks most like", "a fair match"
-        else:
-            eyebrow, strength = "The closest place, but a loose fit, is", "a loose match"
+        # random shapes that exist nowhere also reach 85-95 %, so this is similarity, not proof
+        eyebrow = "The most similar terrain on Earth" if a >= 70 else "The closest terrain on Earth, a loose fit"
+        strength = "a close fit" if a >= 70 else "a rough fit" if a >= 45 else "a loose fit"
         hero = f"""
   <section class="rhero dark">
     <div class="wrap">
@@ -93,8 +90,9 @@ def write_outputs(out_dir, index, query, results, photo=None):
       <h1 class="place grad reveal" data-geo="0">{best['coord']}</h1>
       <p class="coords num reveal" data-coord="0" hidden>{best['coord']}</p>
       <p class="lede reveal">A stretch of terrain about <span class="w num">{best['km']} km</span> across, {strength}
-        for your sculpture's shape (<span class="w num">{best['agree']}%</span> agreement). On the map, the top edge of your sandbox
+        for your sculpture's shape (<span class="w num">{best['agree']}%</span> shape similarity). On the map, the top edge of your sandbox
         faces <span class="w">{best['facing']}</span>.{mirror}</p>
+      <p class="caveat reveal">Similar shapes turn up all over a planet, so treat this as a look-alike, not proof it's the place you made.</p>
       <div class="links reveal">{best['links']}</div>
     </div>
   </section>"""
@@ -118,7 +116,7 @@ def write_outputs(out_dir, index, query, results, photo=None):
         <p class="rank num">No. {o['i']}</p>
         <h3 data-geo="{o['i'] - 1}">{o['coord']}</h3>
         <p class="sub num" data-coord="{o['i'] - 1}" hidden>{o['coord']}</p>
-        <p class="facts num">{o['km']} km across, {o['agree']}% shape match</p>
+        <p class="facts num">{o['km']} km across, {o['agree']}% shape similarity</p>
         <div class="links">{o['links']}</div>
       </li>""" for o in others)
 
@@ -202,7 +200,6 @@ THREE_SECTION = """
 <script type="application/json" id="scene">%%SCENE%%</script>
 <script type="module">
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const D = JSON.parse(document.getElementById("scene").textContent);
 const stage = document.getElementById("stage"), canvas = document.getElementById("c3d");
@@ -215,13 +212,12 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 50);
-camera.position.set(0, 1.15, 1.9);
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true; controls.target.set(0, 0.02, 0); controls.enableZoom = false;
-controls.maxPolarAngle = Math.PI * 0.47; controls.minPolarAngle = Math.PI * 0.12;
-controls.autoRotate = !reduce; controls.autoRotateSpeed = 0.45;
-controls.addEventListener("start", () => { controls.autoRotate = false; });
-
+const VIEW = new THREE.Vector3(0, 1.15, 1.9).normalize(), TARGET = new THREE.Vector3(0, 0.02, 0);
+// Each disc turns on its own spot (a turntable), so neither can swing towards the camera and fill the view.
+let spin = 0, auto = !reduce, drag = null;
+canvas.addEventListener("pointerdown", e => { drag = { x: e.clientX, s: spin }; auto = false; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", e => { if (drag) spin = drag.s + (e.clientX - drag.x) * 0.008; });
+["pointerup", "pointercancel"].forEach(t => canvas.addEventListener(t, () => { drag = null; }));
 scene.add(new THREE.HemisphereLight(0xfff4e6, 0x202428, 1.3));
 const sun = new THREE.DirectionalLight(0xffffff, 2.4); sun.position.set(-1, 1.3, -1); scene.add(sun);
 const rim = new THREE.DirectionalLight(0x8fb8ff, .6); rim.position.set(1.5, .8, 1.5); scene.add(rim);
@@ -238,14 +234,16 @@ let rmin = Infinity, rmax = -Infinity; for (const v of D.real.h) { rmin = Math.m
 const ex0 = Math.max(1, Math.min(60, Math.round(0.16 / Math.max((rmax - rmin) * metres, 1e-6))));
 
 function surface(n, heights, x) {
+  const grp = new THREE.Group(); grp.position.x = x; scene.add(grp);
   const g = new THREE.PlaneGeometry(1, 1, n - 1, n - 1); g.rotateX(-Math.PI / 2);
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, alphaMap, alphaTest: 0.5, side: THREE.DoubleSide });
-  const mesh = new THREE.Mesh(g, mat); mesh.position.x = x; mesh.userData.h = heights; scene.add(mesh);
+  const mesh = new THREE.Mesh(g, mat); mesh.userData.h = heights; grp.add(mesh);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(.5, .49, .05, 120, 1, true),
     new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: .6, metalness: .2, side: THREE.DoubleSide }));
-  base.position.set(x, -.025, 0); scene.add(base);
+  base.position.y = -.025; grp.add(base);
   const sh = new THREE.Mesh(new THREE.CircleGeometry(.66, 64), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: .5 }));
   sh.rotation.x = -Math.PI / 2; sh.position.set(x, -.051, 0); scene.add(sh);
+  mesh.userData.grp = grp;
   return mesh;
 }
 const sculpt = surface(D.sculpt.n, D.sculpt.h.map(v => (v - sm) / (ss || 1) * rs), -0.62);
@@ -274,17 +272,28 @@ function loadImg(url) {
     im.src = url;
   });
 }
-async function imagery(template) {
+const blank = (im) => {                                     // a tile with no data comes back black
+  const c = document.createElement("canvas"); c.width = c.height = 16;
+  const g = c.getContext("2d"); g.drawImage(im, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data; let dark = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 24) dark++;
+  return dark > 0.35 * 256;
+};
+async function tile(templates, z, x, y) {                  // first source that has real pixels for this tile
+  for (const t of templates) {
+    try { const im = await loadImg(t.replace("{z}", z).replace("{x}", x).replace("{y}", y)); if (!blank(im)) return im; } catch (e) { }
+  }
+  throw new Error("tile");
+}
+async function imagery(templates) {
   // The window is axis-aligned in Web Mercator pixels, so the matching satellite tiles can be stitched exactly.
   let zt = Math.round(D.zoom + Math.log2(1024 / D.w)); zt = Math.max(2, Math.min(13, zt));
   const k = 2 ** (zt - D.zoom), gx = D.gx * k, gy = D.gy * k, size = D.w * k, n = 2 ** zt;
   const out = document.createElement("canvas"); out.width = out.height = 1024;
   const ctx = out.getContext("2d"), s = 1024 / size, jobs = [];
   for (let ty = Math.floor(gy / 256); ty <= Math.floor((gy + size - 1) / 256); ty++)
-    for (let tx = Math.floor(gx / 256); tx <= Math.floor((gx + size - 1) / 256); tx++) {
-      const url = template.replace("{z}", zt).replace("{x}", ((tx % n) + n) % n).replace("{y}", ty);
-      jobs.push(loadImg(url).then(im => ctx.drawImage(im, (tx * 256 - gx) * s, (ty * 256 - gy) * s, 256 * s, 256 * s)));
-    }
+    for (let tx = Math.floor(gx / 256); tx <= Math.floor((gx + size - 1) / 256); tx++)
+      jobs.push(tile(templates, zt, ((tx % n) + n) % n, ty).then(im => ctx.drawImage(im, (tx * 256 - gx) * s, (ty * 256 - gy) * s, 256 * s, 256 * s)));
   await Promise.all(jobs);
   ctx.getImageData(0, 0, 1, 1);
   const t = new THREE.CanvasTexture(out); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
@@ -295,7 +304,7 @@ async function prepare() {
   [T.sRelief, T.rRelief, T.sPhoto] = await Promise.all([tex(D.sculptRelief), tex(D.realRelief), D.photo ? tex(D.photo) : null]);
   if (D.sat) T.rSat = await tex(D.sat);                    // imagery prepared by the page (e.g. Mars)
   else if (!D.synthetic) {
-    for (const url of [D.s2, D.esri]) { if (!url) continue; try { T.rSat = await imagery(url); break; } catch (e) { } }
+    try { T.rSat = await imagery([D.s2, D.esri].filter(Boolean)); } catch (e) { }
   }
 }
 function setSurface(kind) {
@@ -311,12 +320,20 @@ document.querySelectorAll("[data-surface]").forEach(b => b.addEventListener("cli
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.position.setLength(w < 600 ? 3.3 : 2.25); camera.updateProjectionMatrix();
+  // far enough that both discs (1.15 either side, plus their height) always fit, on any screen shape
+  const tv = Math.tan(camera.fov * Math.PI / 360), th = tv * camera.aspect;
+  camera.position.copy(VIEW).multiplyScalar(Math.max(1.25 / th, 0.62 / tv, 2.1)).add(TARGET);
+  camera.lookAt(TARGET); camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(stage);
 let visible = false;
 new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(stage);
-renderer.setAnimationLoop(() => { if (!visible) return; controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => {
+  if (!visible) return;
+  if (auto) spin += 0.0025;
+  sculpt.userData.grp.rotation.y = real.userData.grp.rotation.y = spin;
+  renderer.render(scene, camera);
+});
 await prepare();
 setSurface("imagery");
 document.getElementById("loading3d").remove();
@@ -345,6 +362,10 @@ body { background: #000; }
 .coords { margin: 18px 0 0; color: var(--on-dark-2); font-size: 17px; }
 .rhero .lede { margin: 30px auto 0; max-width: 32em; }
 .rhero .lede .w { color: #fff; }
+.rhero .caveat { margin: 14px auto 0; max-width: 36em; font-size: 15px; color: var(--on-dark-2); }
+.rhero .warnbox { margin: 26px auto 0; max-width: 38em; padding: 16px 20px; border-radius: 14px; text-align: left;
+  background: rgba(255, 159, 10, .12); border: 1px solid rgba(255, 159, 10, .45); color: #f5f5f7; font-size: 15px; line-height: 1.5; }
+.rhero .warnbox strong { color: #ffb340; }
 .links { display: flex; gap: 28px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
 
 .trio { padding: 30px 0 120px; }
@@ -361,7 +382,7 @@ body { background: #000; }
 .stage canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; cursor: grab; touch-action: pan-y; }
 .stage canvas:active { cursor: grabbing; }
 .stage .caps { position: absolute; left: 0; right: 0; bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; pointer-events: none;
-  text-align: center; color: var(--on-dark-2); font-size: 15px; }
+  text-align: center; color: #e8e8ed; font-size: 15px; text-shadow: 0 1px 6px #000, 0 0 2px #000; }
 .stage .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--on-dark-2); }
 .ctrl { display: flex; gap: 26px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 28px; color: var(--on-dark-2); font-size: 14px; }
 .seg { display: inline-flex; background: #1d1d1f; border-radius: 980px; padding: 3px; }

@@ -653,7 +653,7 @@ window.__terrainReady = true;
   let planet = "mars";
   const engines = {}, warms = {};
   const drop = $("drop"), go = $("go"), err = $("error"), prog = $("progress"), srv = $("srv");
-  let file = null, timers = [], eng = null, rep = null, warming = null;
+  let file = null, timers = [], eng = null, rep = null, chk = null, warming = null;
   document.querySelectorAll("[data-planet]").forEach(b => b.addEventListener("click", () => {
     planet = b.dataset.planet;
     document.querySelectorAll("[data-planet]").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
@@ -670,7 +670,7 @@ window.__terrainReady = true;
     srv.textContent = "Getting the search ready…";
     warming = (async () => {
       const [E, R] = await Promise.all([import(ENGINE + "engine.js"), import(ENGINE + "report.js")]);
-      rep = R; eng = engines[planet] = new E.Engine(PLANETS[planet] || ENGINE);
+      rep = R; chk = E.photoChecks; eng = engines[planet] = new E.Engine(PLANETS[planet] || ENGINE);
       let got = 0; const depthFiles = new Map();
       const show = () => {
         const total = (eng.info ? eng.info.bytes : 45e6) + Math.max([...depthFiles.values()].reduce((a, b) => a + b, 0), 27e6);
@@ -700,10 +700,11 @@ window.__terrainReady = true;
     const dc = document.createElement("canvas"); dc.width = dc.height = 518;
     const g = dc.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(sq, 0, 0, 518, 518);
     const h = await eng.heightFromCanvas(dc, $("invert").checked);
+    const checks = Object.assign(chk ? chk(sq) : {}, h.stats || {});
     stage(1);
     const { query, results } = await eng.search(h, { allowFlip: $("flip").checked, onStage: stage });
     const parts = await (await fetch(ENGINE + "report.json")).json();
-    const html = await rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0] });
+    const html = await rep.buildReport(eng, parts, { query, results, photo: sq, home: location.href.split("#")[0], checks });
     stage(3);
     showReport(html);
   }
